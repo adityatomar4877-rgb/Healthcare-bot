@@ -3,31 +3,53 @@ import pandas as pd
 import openai
 import os
 import random
+import re
 
 # ------------------------------
 # 1. Load your FAQ data (CSV)
 # ------------------------------
 faq_df = pd.read_csv("health_faq.csv")
 
+# Clean column names
+faq_df.columns = faq_df.columns.str.strip()
+
 # ------------------------------
 # 2. Functions
 # ------------------------------
+def highlight_keywords(text, keywords):
+    """Highlight matched keywords in the text using Markdown bold"""
+    for word in keywords:
+        pattern = re.compile(rf"\\b{re.escape(word)}\\b", re.IGNORECASE)
+        text = pattern.sub(f"**{word}**", text)
+    return text
+
+
 def search_faq(user_input):
-    """Search for matching FAQ keywords in the CSV file"""
+    """Search for matching Diseases or Symptoms in the CSV file, return multiple matches with highlights"""
     user_words = user_input.lower().split()
-    best_match = None
-    max_matches = 0
+    matches_found = []
 
     for _, row in faq_df.iterrows():
-        question_words = row['question'].lower().split()
-        matches = sum(1 for word in user_words if word in question_words)
+        # Combine disease and symptoms as searchable text
+        searchable_text = str(row['Disease']).lower() + " " + str(row['Common Symptoms']).lower()
+        matches = sum(1 for word in user_words if word in searchable_text)
 
-        if matches > max_matches:
-            max_matches = matches
-            best_match = row['answer']
+        if matches > 0:
+            # Build a helpful answer from CSV fields
+            answer = f"**Disease:** {row['Disease']}\n\n" \
+                     f"**Common Symptoms:** {row['Common Symptoms']}\n\n" \
+                     f"**Notes:** {row['Notes']}\n\n" \
+                     f"**Severity:** {row['Severity Tagging']}\n\n" \
+                     f"**Advice:** {row['Disclaimers & Advice']}"
+            # Highlight keywords
+            answer = highlight_keywords(answer, user_words)
+            matches_found.append((matches, answer))
 
-    if max_matches > 0:
-        return best_match
+    # Sort by number of matches (descending)
+    matches_found.sort(key=lambda x: x[0], reverse=True)
+
+    if matches_found:
+        return "\n\n---\n\n".join([m[1] for m in matches_found[:3]])  # return top 3 matches
     return None
 
 
