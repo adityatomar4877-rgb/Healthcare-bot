@@ -36,10 +36,10 @@ def search_faq(user_input):
     return None
 
 # ------------------------------
-# 3. OpenAI Fallback Function
+# 3. OpenAI Fallback Function (new API >=1.0.0)
 # ------------------------------
 def ask_openai(user_input):
-    """Get response from OpenAI GPT if FAQ fails"""
+    """Get response from OpenAI GPT if FAQ fails (new API)"""
     try:
         api_key = st.secrets["OPENAI_API_KEY"]
     except Exception:
@@ -48,7 +48,7 @@ def ask_openai(user_input):
     openai.api_key = api_key
 
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful health awareness assistant. Never give prescriptions, only awareness and prevention info."},
@@ -56,6 +56,7 @@ def ask_openai(user_input):
             ],
             max_tokens=200
         )
+        # New API structure
         return response.choices[0].message["content"]
     except Exception as e:
         return f"⚠️ Error while contacting OpenAI: {e}"
