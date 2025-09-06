@@ -83,4 +83,8 @@ if st.button("💡 Show me a random health tip"):
     tips = [
         "Wash your hands regularly with soap and water.",
         "Drink at least 2–3 liters of clean water every day.",
-        "Use mosquito nets to prevent vector-borne di
+        "Use mosquito nets to prevent vector-borne diseases.",
+        "Eat fresh fruits and vegetables daily.",
+        "Exercise at least 30 minutes every day."
+    ]
+    st.warning(random.choice(tips))
