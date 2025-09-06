@@ -13,33 +13,46 @@ except FileNotFoundError:
     st.stop()
 
 # ------------------------------
-# 2. FAQ Search Function (simple keyword match)
+# 2. FAQ Search Function (match disease names & symptoms)
 # ------------------------------
 def search_faq(user_input):
-    """Search for matching FAQ keywords in the CSV file"""
-    user_words = user_input.lower().split()
+    user_input = user_input.lower()
     best_match = None
-    max_matches = 0
+    best_score = 0
 
     for _, row in faq_df.iterrows():
-        if "question" not in row or "answer" not in row:
-            continue
-        question_words = str(row["question"]).lower().split()
-        matches = sum(1 for word in user_words if word in question_words)
+        disease = str(row.get("Disease", "")).lower()
+        symptoms = str(row.get("Common Symptoms", "")).lower()
 
-        if matches > max_matches:
-            max_matches = matches
-            best_match = row["answer"]
+        # Simple score: count keyword overlap
+        score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
 
-    if max_matches > 0:
-        return best_match
+        if score > best_score:
+            best_score = score
+            best_match = row
+
+    if best_score > 0:
+        # Build structured answer
+        return f"""
+**🦠 Disease:** {best_match.get('Disease', 'N/A')}
+
+**Symptoms:** {best_match.get('Common Symptoms', 'N/A')}
+
+**Notes:** {best_match.get('Notes', 'N/A')}
+
+**Severity:** {best_match.get('Severity Tagging', 'N/A')}
+
+**Preventions:** {best_match.get('Preventions', 'N/A')}
+
+⚠️ {best_match.get('Disclaimers & Advice', 'N/A')}
+"""
     return None
 
 # ------------------------------
 # 3. OpenAI Fallback Function (new API >=1.0.0)
 # ------------------------------
 def ask_openai(user_input):
-    """Get response from OpenAI GPT if FAQ fails (new API)"""
+    """Get response from OpenAI GPT if FAQ fails"""
     try:
         api_key = st.secrets["OPENAI_API_KEY"]
     except Exception:
@@ -54,9 +67,8 @@ def ask_openai(user_input):
                 {"role": "system", "content": "You are a helpful health awareness assistant. Never give prescriptions, only awareness and prevention info."},
                 {"role": "user", "content": user_input}
             ],
-            max_tokens=200
+            max_tokens=250
         )
-        # New API structure
         return response.choices[0].message["content"]
     except Exception as e:
         return f"⚠️ Error while contacting OpenAI: {e}"
@@ -78,7 +90,6 @@ if user_question:
     if answer:
         st.success(answer)
     else:
-        # Fallback to AI with spinner
         with st.spinner("Fetching info from AI..."):
             answer = ask_openai(user_question)
             st.success(answer)
