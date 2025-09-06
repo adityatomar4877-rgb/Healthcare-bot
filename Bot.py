@@ -13,40 +13,27 @@ except FileNotFoundError:
     st.stop()
 
 # ------------------------------
-# 2. FAQ Search Function (match disease names & symptoms)
+# 2. FAQ Search Function (Top 3 Matches)
 # ------------------------------
-def search_faq(user_input):
+def search_faq(user_input, top_n=3):
+    """Search FAQ and return top N best matches"""
     user_input = user_input.lower()
-    best_match = None
-    best_score = 0
+    scores = []
 
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
 
-        # Simple score: count keyword overlap
+        # Score = keyword overlap
         score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
 
-        if score > best_score:
-            best_score = score
-            best_match = row
+        if score > 0:  # Only consider relevant rows
+            scores.append((score, row))
 
-    if best_score > 0:
-        # Build structured answer
-        return f"""
-**🦠 Disease:** {best_match.get('Disease', 'N/A')}
+    # Sort by score (highest first) and pick top N
+    scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
 
-**Symptoms:** {best_match.get('Common Symptoms', 'N/A')}
-
-**Notes:** {best_match.get('Notes', 'N/A')}
-
-**Severity:** {best_match.get('Severity Tagging', 'N/A')}
-
-**Preventions:** {best_match.get('Preventions', 'N/A')}
-
-⚠️ {best_match.get('Disclaimers & Advice', 'N/A')}
-"""
-    return None
+    return [row for _, row in scores] if scores else None
 
 # ------------------------------
 # 3. OpenAI Fallback Function (new API >=1.0.0)
@@ -85,10 +72,19 @@ user_question = st.text_input("Type your question here:")
 
 if user_question:
     # Try FAQ first
-    answer = search_faq(user_question)
+    matches = search_faq(user_question)
 
-    if answer:
-        st.success(answer)
+    if matches:
+        st.subheader("📋 Best Matches from Database:")
+        for i, row in enumerate(matches, start=1):
+            with st.container():
+                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                st.markdown(f"**Preventions:** {row.get('Preventions', 'N/A')}")
+                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                st.markdown("---")
     else:
         with st.spinner("Fetching info from AI..."):
             answer = ask_openai(user_question)
