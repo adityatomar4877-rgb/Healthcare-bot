@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import openai
 import random
+from openai import OpenAI
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -36,7 +36,7 @@ def search_faq(user_input, top_n=3):
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 3. OpenAI Fallback Function (fixed for >=1.0.0)
+# 3. OpenAI Fallback Function
 # ------------------------------
 def ask_openai(user_input):
     """Get response from OpenAI GPT if FAQ fails"""
@@ -45,10 +45,10 @@ def ask_openai(user_input):
     except Exception:
         return "⚠️ OpenAI API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
 
-    openai.api_key = api_key
+    client = OpenAI(api_key=api_key)
 
     try:
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful health awareness assistant. Never give prescriptions, only awareness and prevention info."},
@@ -56,12 +56,47 @@ def ask_openai(user_input):
             ],
             max_tokens=250
         )
-        # ✅ Fixed: access .content instead of ["content"]
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # ✅ fixed for new SDK
     except Exception as e:
         return f"⚠️ Error while contacting OpenAI: {e}"
 
 # ------------------------------
 # 4. Streamlit UI
 # ------------------------------
-st.set_page_config(page_title="Healthcare Ch_
+st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
+st.title("💊 Healthcare & Disease Awareness Chatbot")
+st.write("Ask about diseases, symptoms, and prevention tips.")
+
+# User input
+user_question = st.text_input("Type your question here:")
+
+if user_question:
+    # Try FAQ first
+    matches = search_faq(user_question)
+
+    if matches:
+        st.subheader("📋 Best Matches from Database:")
+        for i, row in enumerate(matches, start=1):
+            with st.container():
+                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                st.markdown(f"**Preventions:** {row.get('Preventions', 'N/A')}")
+                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                st.markdown("---")
+    else:
+        with st.spinner("Fetching info from AI..."):
+            answer = ask_openai(user_question)
+            st.success(answer)
+
+# Random health tip
+if st.button("💡 Show me a random health tip"):
+    tips = [
+        "Wash your hands regularly with soap and water.",
+        "Drink at least 2–3 liters of clean water every day.",
+        "Use mosquito nets to prevent vector-borne diseases.",
+        "Eat fresh fruits and vegetables daily.",
+        "Exercise at least 30 minutes every day."
+    ]
+    st.warning(random.choice(tips))
