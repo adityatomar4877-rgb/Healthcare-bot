@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import openai
 import random
-from rapidfuzz import fuzz
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -14,20 +13,25 @@ except FileNotFoundError:
     st.stop()
 
 # ------------------------------
-# 2. FAQ Search Function (fuzzy)
+# 2. FAQ Search Function (simple keyword match)
 # ------------------------------
 def search_faq(user_input):
-    """Search for the best matching FAQ answer using fuzzy matching"""
+    """Search for matching FAQ keywords in the CSV file"""
+    user_words = user_input.lower().split()
     best_match = None
-    max_ratio = 0
+    max_matches = 0
+
     for _, row in faq_df.iterrows():
         if "question" not in row or "answer" not in row:
             continue
-        ratio = fuzz.partial_ratio(user_input.lower(), str(row["question"]).lower())
-        if ratio > max_ratio:
-            max_ratio = ratio
+        question_words = str(row["question"]).lower().split()
+        matches = sum(1 for word in user_words if word in question_words)
+
+        if matches > max_matches:
+            max_matches = matches
             best_match = row["answer"]
-    if max_ratio > 60:  # Threshold for match confidence
+
+    if max_matches > 0:
         return best_match
     return None
 
