@@ -55,9 +55,10 @@ def search_faq(user_input):
 
 def ask_openai(user_input):
     """Fallback to OpenAI GPT if no FAQ matches"""
-    api_key = os.getenv("OPENAI_API_KEY")  # 🔑 from Streamlit Secrets
-    if not api_key:
-        return "⚠️ OpenAI API key not found. Please set it in Streamlit Secrets."
+    try:
+        api_key = st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        return "⚠️ OpenAI API key not found. Please add it to .streamlit/secrets.toml"
 
     openai.api_key = api_key
 
