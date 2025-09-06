@@ -2,43 +2,44 @@ import streamlit as st
 import pandas as pd
 import openai
 import random
+from rapidfuzz import fuzz
 
 # ------------------------------
-# 1. Load your FAQ data (CSV)
+# 1. Load FAQ CSV safely
 # ------------------------------
-faq_df = pd.read_csv("health_faq.csv")
+try:
+    faq_df = pd.read_csv("health_faq.csv")
+except FileNotFoundError:
+    st.error("❌ FAQ file not found. Please upload 'health_faq.csv' in the app directory.")
+    st.stop()
 
 # ------------------------------
-# 2. Functions
+# 2. FAQ Search Function (fuzzy)
 # ------------------------------
-
 def search_faq(user_input):
-    """Search for matching FAQ keywords in the CSV file"""
-    user_words = user_input.lower().split()
+    """Search for the best matching FAQ answer using fuzzy matching"""
     best_match = None
-    max_matches = 0
-
+    max_ratio = 0
     for _, row in faq_df.iterrows():
         if "question" not in row or "answer" not in row:
             continue
-        question_words = str(row["question"]).lower().split()
-        matches = sum(1 for word in user_words if word in question_words)
-
-        if matches > max_matches:
-            max_matches = matches
+        ratio = fuzz.partial_ratio(user_input.lower(), str(row["question"]).lower())
+        if ratio > max_ratio:
+            max_ratio = ratio
             best_match = row["answer"]
-
-    if max_matches > 0:
+    if max_ratio > 60:  # Threshold for match confidence
         return best_match
     return None
 
-
+# ------------------------------
+# 3. OpenAI Fallback Function
+# ------------------------------
 def ask_openai(user_input):
-    """Fallback to OpenAI GPT if no FAQ matches"""
+    """Get response from OpenAI GPT if FAQ fails"""
     try:
-        api_key = st.secrets["OPENAI_API_KEY"]  # ✅ Cloud-safe secrets
+        api_key = st.secrets["OPENAI_API_KEY"]
     except Exception:
-        return "⚠️ OpenAI API key not found. Please add it in Streamlit Cloud → App → Settings → Secrets."
+        return "⚠️ OpenAI API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
 
     openai.api_key = api_key
 
@@ -55,30 +56,29 @@ def ask_openai(user_input):
     except Exception as e:
         return f"⚠️ Error while contacting OpenAI: {e}"
 
-
 # ------------------------------
-# 3. Streamlit User Interface
+# 4. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
-st.write("Ask me about common diseases, symptoms, and prevention tips.")
+st.write("Ask about diseases, symptoms, and prevention tips.")
 
 # User input
 user_question = st.text_input("Type your question here:")
 
 if user_question:
-    # First: Try to answer from FAQ
+    # Try FAQ first
     answer = search_faq(user_question)
 
-    # If no FAQ answer, use OpenAI
     if answer:
         st.success(answer)
     else:
-        st.info("Fetching information from AI...")
-        answer = ask_openai(user_question)
-        st.success(answer)
+        # Fallback to AI with spinner
+        with st.spinner("Fetching info from AI..."):
+            answer = ask_openai(user_question)
+            st.success(answer)
 
-# Extra: Show a health tip
+# Random health tip
 if st.button("💡 Show me a random health tip"):
     tips = [
         "Wash your hands regularly with soap and water.",
