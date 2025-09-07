@@ -1,71 +1,62 @@
 import streamlit as st
 import pandas as pd
-import openai
 import random
-import difflib
+from openai import OpenAI
 
 # ------------------------------
-# 1. Load CSV safely
+# 1. Load FAQ CSV safely
 # ------------------------------
 try:
     faq_df = pd.read_csv("health_faq.csv")
-    # Normalize column names
-    faq_df.columns = faq_df.columns.str.strip().str.lower()
 except FileNotFoundError:
     st.error("❌ FAQ file not found. Please upload 'health_faq.csv' in the app directory.")
     st.stop()
 
 # ------------------------------
-# 2. Search Function
+# 2. FAQ Search Function (Top 3 Matches)
 # ------------------------------
-def search_disease(user_input):
-    """Find best matching diseases and return details"""
-    diseases = faq_df["disease"].dropna().tolist()
+def search_faq(user_input, top_n=3):
+    """Search FAQ and return top N best matches"""
+    user_input = user_input.lower()
+    scores = []
 
-    # Get best 3 close matches
-    best_matches = difflib.get_close_matches(user_input, diseases, n=3, cutoff=0.4)
+    for _, row in faq_df.iterrows():
+        disease = str(row.get("Disease", "")).lower()
+        symptoms = str(row.get("Common Symptoms", "")).lower()
 
-    results = []
-    for match in best_matches:
-        row = faq_df[faq_df["disease"] == match].iloc[0]
+        # Score = keyword overlap
+        score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
 
-        result = f"""
-### 🦠 Disease: {row['disease']}
-**Symptoms:** {row.get('common symptoms', 'Not available')}
+        if score > 0:  # Only consider relevant rows
+            scores.append((score, row))
 
-**Preventions:**  
-{row.get('preventions', 'Not available')}
+    # Sort by score (highest first) and pick top N
+    scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
 
-**Notes:** {row.get('notes', 'Not available')}
-**Severity:** {row.get('severity tagging', 'Not available')}
-**Disclaimer:** {row.get('disclaimers & advice', 'Not available')}
-        """
-        results.append(result)
-
-    return results
+    return [row for _, row in scores] if scores else None
 
 # ------------------------------
 # 3. OpenAI Fallback Function
 # ------------------------------
 def ask_openai(user_input):
-    """Get response from OpenAI GPT if FAQ fails (new API)"""
+    """Get response from OpenAI GPT if FAQ fails"""
     try:
         api_key = st.secrets["OPENAI_API_KEY"]
     except Exception:
         return "⚠️ OpenAI API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key)
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful health awareness assistant. Always include prevention tips in your response. Never give prescriptions."},
+                {"role": "system", "content": "You are a helpful health awareness assistant. Never give prescriptions, only awareness and prevention info."},
                 {"role": "user", "content": user_input}
             ],
             max_tokens=250
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content  # ✅ fixed for new SDK
     except Exception as e:
         return f"⚠️ Error while contacting OpenAI: {e}"
 
@@ -80,14 +71,21 @@ st.write("Ask about diseases, symptoms, and prevention tips.")
 user_question = st.text_input("Type your question here:")
 
 if user_question:
-    # Search in CSV first
-    results = search_disease(user_question)
+    # Try FAQ first
+    matches = search_faq(user_question)
 
-    if results:
-        for res in results:
-            st.success(res)
+    if matches:
+        st.subheader("📋 Best Matches from Database:")
+        for i, row in enumerate(matches, start=1):
+            with st.container():
+                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                st.markdown(f"**Preventions:** {row.get('Preventions', 'N/A')}")
+                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                st.markdown("---")
     else:
-        # Fallback to AI
         with st.spinner("Fetching info from AI..."):
             answer = ask_openai(user_question)
             st.success(answer)
