@@ -8,6 +8,10 @@ from openai import OpenAI
 # ------------------------------
 try:
     faq_df = pd.read_csv("health_faq.csv")
+
+    # ✅ Normalize column names (fix spaces/case issues)
+    faq_df.columns = faq_df.columns.str.strip().str.lower()
+
 except FileNotFoundError:
     st.error("❌ FAQ file not found. Please upload 'health_faq.csv' in the app directory.")
     st.stop()
@@ -21,8 +25,8 @@ def search_faq(user_input, top_n=3):
     scores = []
 
     for _, row in faq_df.iterrows():
-        disease = str(row.get("Disease", "")).lower()
-        symptoms = str(row.get("Common Symptoms", "")).lower()
+        disease = str(row.get("disease", "")).lower()
+        symptoms = str(row.get("common symptoms", "")).lower()
 
         # Score = keyword overlap
         score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
@@ -56,7 +60,7 @@ def ask_openai(user_input):
             ],
             max_tokens=250
         )
-        return response.choices[0].message.content  # ✅ fixed for new SDK
+        return response.choices[0].message.content
     except Exception as e:
         return f"⚠️ Error while contacting OpenAI: {e}"
 
@@ -78,12 +82,12 @@ if user_question:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
             with st.container():
-                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
-                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
-                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
-                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                st.markdown(f"**Preventions:** {row.get('Preventions', 'N/A')}")
-                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                st.markdown(f"### {i}. 🦠 {row.get('disease', 'N/A')}")
+                st.markdown(f"**Symptoms:** {row.get('common symptoms', 'N/A')}")
+                st.markdown(f"**Notes:** {row.get('notes', 'N/A')}")
+                st.markdown(f"**Severity:** {row.get('severity tagging', 'N/A')}")
+                st.markdown(f"**Preventions:** {row.get('preventions', 'N/A')}")  # ✅ fixed
+                st.info(f"⚠️ {row.get('disclaimers & advice', 'N/A')}")
                 st.markdown("---")
     else:
         with st.spinner("Fetching info from AI..."):
