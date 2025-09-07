@@ -9,7 +9,7 @@ from openai import OpenAI
 try:
     faq_df = pd.read_csv("health_faq.csv")
 
-    # ✅ Only strip spaces, keep original names like "Preventions"
+    # ✅ Only strip spaces from column names
     faq_df.columns = faq_df.columns.str.strip()
     faq_df = faq_df.fillna("Not available")
 
@@ -70,7 +70,7 @@ def ask_openai(user_input):
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
-st.write("Ask about diseases, symptoms, and prevention tips.")
+st.write("Ask about diseases, symptoms, and awareness tips.")
 
 # User input
 user_question = st.text_input("Type your question here:")
@@ -87,7 +87,6 @@ if user_question:
                 st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
                 st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
                 st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                st.markdown(f"**Preventions:** {row.get('Preventions', 'Not available')}")  # ✅ fixed
                 st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
                 st.markdown("---")
     else:
