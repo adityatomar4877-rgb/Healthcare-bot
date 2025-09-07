@@ -9,8 +9,9 @@ from openai import OpenAI
 try:
     faq_df = pd.read_csv("health_faq.csv")
 
-    # ✅ Normalize column names (fix spaces/case issues)
+    # ✅ Normalize column names (lowercase, no spaces) and fill blanks
     faq_df.columns = faq_df.columns.str.strip().str.lower()
+    faq_df = faq_df.fillna("Not available")
 
 except FileNotFoundError:
     st.error("❌ FAQ file not found. Please upload 'health_faq.csv' in the app directory.")
@@ -86,7 +87,7 @@ if user_question:
                 st.markdown(f"**Symptoms:** {row.get('common symptoms', 'N/A')}")
                 st.markdown(f"**Notes:** {row.get('notes', 'N/A')}")
                 st.markdown(f"**Severity:** {row.get('severity tagging', 'N/A')}")
-                st.markdown(f"**Preventions:** {row.get('preventions', 'N/A')}")  # ✅ fixed
+                st.markdown(f"**Preventions:** {row.get('preventions', 'Not available')}")  # ✅ Always shows
                 st.info(f"⚠️ {row.get('disclaimers & advice', 'N/A')}")
                 st.markdown("---")
     else:
