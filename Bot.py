@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import openai
 import random
-from rapidfuzz import fuzz, process
+import difflib
 
 # ------------------------------
 # 1. Load CSV safely
@@ -17,17 +17,16 @@ except FileNotFoundError:
 # 2. Search Function
 # ------------------------------
 def search_disease(user_input):
-    """Find best matching disease and return details"""
+    """Find best matching diseases and return details"""
     diseases = faq_df["Disease"].dropna().tolist()
 
-    # Find best 3 matches using fuzzy matching
-    best_matches = process.extract(user_input, diseases, scorer=fuzz.partial_ratio, limit=3)
+    # Get best 3 close matches
+    best_matches = difflib.get_close_matches(user_input, diseases, n=3, cutoff=0.4)
 
     results = []
-    for match, score, idx in best_matches:
-        if score > 50:  # Only accept reasonably close matches
-            row = faq_df.iloc[idx]
-            result = f"""
+    for match in best_matches:
+        row = faq_df[faq_df["Disease"] == match].iloc[0]
+        result = f"""
 ### 🦠 Disease: {row['Disease']}
 **Symptoms:** {row['Common Symptoms']}
 
@@ -37,8 +36,8 @@ def search_disease(user_input):
 **Notes:** {row['Notes']}
 **Severity:** {row['Severity Tagging']}
 **Disclaimer:** {row['Disclaimers & Advice']}
-            """
-            results.append(result)
+        """
+        results.append(result)
 
     return results
 
