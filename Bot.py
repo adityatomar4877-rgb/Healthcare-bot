@@ -9,8 +9,8 @@ from openai import OpenAI
 try:
     faq_df = pd.read_csv("health_faq.csv")
 
-    # ✅ Normalize column names (lowercase, no spaces) and fill blanks
-    faq_df.columns = faq_df.columns.str.strip().str.lower()
+    # ✅ Only strip spaces, keep original names like "Preventions"
+    faq_df.columns = faq_df.columns.str.strip()
     faq_df = faq_df.fillna("Not available")
 
 except FileNotFoundError:
@@ -26,8 +26,8 @@ def search_faq(user_input, top_n=3):
     scores = []
 
     for _, row in faq_df.iterrows():
-        disease = str(row.get("disease", "")).lower()
-        symptoms = str(row.get("common symptoms", "")).lower()
+        disease = str(row.get("Disease", "")).lower()
+        symptoms = str(row.get("Common Symptoms", "")).lower()
 
         # Score = keyword overlap
         score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
@@ -83,12 +83,12 @@ if user_question:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
             with st.container():
-                st.markdown(f"### {i}. 🦠 {row.get('disease', 'N/A')}")
-                st.markdown(f"**Symptoms:** {row.get('common symptoms', 'N/A')}")
-                st.markdown(f"**Notes:** {row.get('notes', 'N/A')}")
-                st.markdown(f"**Severity:** {row.get('severity tagging', 'N/A')}")
-                st.markdown(f"**Preventions:** {row.get('preventions', 'Not available')}")  # ✅ Always shows
-                st.info(f"⚠️ {row.get('disclaimers & advice', 'N/A')}")
+                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                st.markdown(f"**Preventions:** {row.get('Preventions', 'Not available')}")  # ✅ fixed
+                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
                 st.markdown("---")
     else:
         with st.spinner("Fetching info from AI..."):
