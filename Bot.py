@@ -9,6 +9,8 @@ import difflib
 # ------------------------------
 try:
     faq_df = pd.read_csv("health_faq.csv")
+    # Normalize column names
+    faq_df.columns = faq_df.columns.str.strip().str.lower()
 except FileNotFoundError:
     st.error("❌ FAQ file not found. Please upload 'health_faq.csv' in the app directory.")
     st.stop()
@@ -18,25 +20,25 @@ except FileNotFoundError:
 # ------------------------------
 def search_disease(user_input):
     """Find best matching diseases and return details"""
-    diseases = faq_df["Disease"].dropna().tolist()
+    diseases = faq_df["disease"].dropna().tolist()
 
     # Get best 3 close matches
     best_matches = difflib.get_close_matches(user_input, diseases, n=3, cutoff=0.4)
 
     results = []
     for match in best_matches:
-        row = faq_df[faq_df["Disease"] == match].iloc[0]
+        row = faq_df[faq_df["disease"] == match].iloc[0]
 
         result = f"""
-### 🦠 Disease: {row['Disease']}
-**Symptoms:** {row['Common Symptoms']}
+### 🦠 Disease: {row['disease']}
+**Symptoms:** {row.get('common symptoms', 'Not available')}
 
 **Preventions:**  
-{row['Preventions']}
+{row.get('preventions', 'Not available')}
 
-**Notes:** {row['Notes']}
-**Severity:** {row['Severity Tagging']}
-**Disclaimer:** {row['Disclaimers & Advice']}
+**Notes:** {row.get('notes', 'Not available')}
+**Severity:** {row.get('severity tagging', 'Not available')}
+**Disclaimer:** {row.get('disclaimers & advice', 'Not available')}
         """
         results.append(result)
 
