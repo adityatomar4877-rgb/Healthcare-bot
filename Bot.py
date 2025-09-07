@@ -26,6 +26,7 @@ def search_disease(user_input):
     results = []
     for match in best_matches:
         row = faq_df[faq_df["Disease"] == match].iloc[0]
+
         result = f"""
 ### 🦠 Disease: {row['Disease']}
 **Symptoms:** {row['Common Symptoms']}
