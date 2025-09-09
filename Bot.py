@@ -2,17 +2,13 @@ import streamlit as st
 import pandas as pd
 import random
 from openai import OpenAI
+import speech_recognition as sr
 
 # ------------------------------
 # 1. Load FAQ CSV safely
 # ------------------------------
 try:
     faq_df = pd.read_csv("health_faq.csv")
-
-    # ✅ Only strip spaces from column names
-    faq_df.columns = faq_df.columns.str.strip()
-    faq_df = faq_df.fillna("Not available")
-
 except FileNotFoundError:
     st.error("❌ FAQ file not found. Please upload 'health_faq.csv' in the app directory.")
     st.stop()
@@ -66,19 +62,43 @@ def ask_openai(user_input):
         return f"⚠️ Error while contacting OpenAI: {e}"
 
 # ------------------------------
-# 4. Streamlit UI
+# 4. Voice Recognition Function
+# ------------------------------
+def recognize_speech():
+    r = sr.Recognizer()
+    with sr.Microphone() as source:
+        st.info("🎤 Listening... please speak now.")
+        audio = r.listen(source, phrase_time_limit=5)
+    try:
+        text = r.recognize_google(audio)
+        st.success(f"✅ You said: {text}")
+        return text
+    except sr.UnknownValueError:
+        st.error("❌ Sorry, could not understand your voice.")
+    except sr.RequestError:
+        st.error("⚠️ Could not connect to speech recognition service.")
+    return None
+
+# ------------------------------
+# 5. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
-st.write("Ask about diseases, symptoms, and awareness tips.")
+st.write("Ask about diseases, symptoms, and prevention tips.")
 
-# User input
+# Text input field
 user_question = st.text_input("Type your question here:")
 
-if user_question:
-    # Try FAQ first
-    matches = search_faq(user_question)
+# Buttons: Enter + Voice
+col1, col2 = st.columns([1, 1])
+with col1:
+    enter_pressed = st.button("➡ Enter")
+with col2:
+    voice_pressed = st.button("🎤 Speak")
 
+# Handle input if Enter button pressed
+if enter_pressed and user_question:
+    matches = search_faq(user_question)
     if matches:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
@@ -93,6 +113,26 @@ if user_question:
         with st.spinner("Fetching info from AI..."):
             answer = ask_openai(user_question)
             st.success(answer)
+
+# Handle voice input if Voice button pressed
+if voice_pressed:
+    spoken_text = recognize_speech()
+    if spoken_text:
+        matches = search_faq(spoken_text)
+        if matches:
+            st.subheader("📋 Best Matches from Database:")
+            for i, row in enumerate(matches, start=1):
+                with st.container():
+                    st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                    st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                    st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                    st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                    st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                    st.markdown("---")
+        else:
+            with st.spinner("Fetching info from AI..."):
+                answer = ask_openai(spoken_text)
+                st.success(answer)
 
 # Random health tip
 if st.button("💡 Show me a random health tip"):
