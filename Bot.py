@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import random
 from openai import OpenAI
+from rapidfuzz import fuzz
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
+import queue
 import speech_recognition as sr
 
 # ------------------------------
@@ -25,13 +28,11 @@ def search_faq(user_input, top_n=3):
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
 
-        # Score = keyword overlap
-        score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
+        score = fuzz.partial_ratio(user_input, disease) + fuzz.partial_ratio(user_input, symptoms)
 
-        if score > 0:  # Only consider relevant rows
+        if score > 0:
             scores.append((score, row))
 
-    # Sort by score (highest first) and pick top N
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
 
     return [row for _, row in scores] if scores else None
@@ -62,63 +63,29 @@ def ask_openai(user_input):
         return f"⚠️ Error while contacting OpenAI: {e}"
 
 # ------------------------------
-# 4. Voice Recognition Function
+# 4. Voice Input Setup
 # ------------------------------
-def recognize_speech():
-    r = sr.Recognizer()
-    with sr.Microphone() as source:
-        st.info("🎤 Listening... please speak now.")
-        audio = r.listen(source, phrase_time_limit=5)
-    try:
-        text = r.recognize_google(audio)
-        st.success(f"✅ You said: {text}")
-        return text
-    except sr.UnknownValueError:
-        st.error("❌ Sorry, could not understand your voice.")
-    except sr.RequestError:
-        st.error("⚠️ Could not connect to speech recognition service.")
-    return None
+class AudioProcessor(AudioProcessorBase):
+    def __init__(self):
+        self.audio_queue = queue.Queue()
+
+    def recv_audio(self, frame):
+        audio_data = frame.to_ndarray().tobytes()
+        self.audio_queue.put(audio_data)
+        return frame
 
 # ------------------------------
 # 5. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
-st.write("Ask about diseases, symptoms, and prevention tips.")
+st.write("Ask about diseases, symptoms, and awareness tips.")
 
-# Text input field
+# Text input with Enter button
 user_question = st.text_input("Type your question here:")
-
-# Buttons: Enter + Voice
-col1, col2 = st.columns([1, 1])
-with col1:
-    enter_pressed = st.button("➡ Enter")
-with col2:
-    voice_pressed = st.button("🎤 Speak")
-
-# Handle input if Enter button pressed
-if enter_pressed and user_question:
-    matches = search_faq(user_question)
-    if matches:
-        st.subheader("📋 Best Matches from Database:")
-        for i, row in enumerate(matches, start=1):
-            with st.container():
-                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
-                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
-                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
-                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
-                st.markdown("---")
-    else:
-        with st.spinner("Fetching info from AI..."):
-            answer = ask_openai(user_question)
-            st.success(answer)
-
-# Handle voice input if Voice button pressed
-if voice_pressed:
-    spoken_text = recognize_speech()
-    if spoken_text:
-        matches = search_faq(spoken_text)
+if st.button("Submit"):
+    if user_question:
+        matches = search_faq(user_question)
         if matches:
             st.subheader("📋 Best Matches from Database:")
             for i, row in enumerate(matches, start=1):
@@ -131,8 +98,44 @@ if voice_pressed:
                     st.markdown("---")
         else:
             with st.spinner("Fetching info from AI..."):
-                answer = ask_openai(spoken_text)
+                answer = ask_openai(user_question)
                 st.success(answer)
+
+# Voice Input
+st.subheader("🎤 Voice Input")
+webrtc_ctx = webrtc_streamer(
+    key="speech-to-text",
+    mode=WebRtcMode.SENDONLY,
+    audio_processor_factory=AudioProcessor,
+    media_stream_constraints={"audio": True, "video": False},
+)
+
+if st.button("Transcribe Voice"):
+    if webrtc_ctx and webrtc_ctx.audio_processor:
+        recognizer = sr.Recognizer()
+        audio_bytes = b''.join(list(webrtc_ctx.audio_processor.audio_queue.queue))
+        try:
+            audio_data = sr.AudioData(audio_bytes, 16000, 2)
+            text = recognizer.recognize_google(audio_data)
+            st.success(f"🗣️ You said: {text}")
+
+            matches = search_faq(text)
+            if matches:
+                st.subheader("📋 Best Matches from Database:")
+                for i, row in enumerate(matches, start=1):
+                    with st.container():
+                        st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                        st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                        st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                        st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                        st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                        st.markdown("---")
+            else:
+                with st.spinner("Fetching info from AI..."):
+                    answer = ask_openai(text)
+                    st.success(answer)
+        except Exception as e:
+            st.error(f"⚠️ Could not transcribe: {e}")
 
 # Random health tip
 if st.button("💡 Show me a random health tip"):
