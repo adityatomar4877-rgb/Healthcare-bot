@@ -2,5 +2,5 @@ streamlit
 pandas
 openai
 rapidfuzz
+streamlit-webrtc
 SpeechRecognition
-pyaudio
