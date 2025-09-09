@@ -81,25 +81,39 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and awareness tips.")
 
+# Use session state to persist user input/results
+if "last_query" not in st.session_state:
+    st.session_state.last_query = None
+if "last_answer" not in st.session_state:
+    st.session_state.last_answer = None
+
 # Text input with Enter button
 user_question = st.text_input("Type your question here:")
+
 if st.button("Submit"):
     if user_question:
+        st.session_state.last_query = user_question
         matches = search_faq(user_question)
         if matches:
-            st.subheader("📋 Best Matches from Database:")
-            for i, row in enumerate(matches, start=1):
-                with st.container():
-                    st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
-                    st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
-                    st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
-                    st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                    st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
-                    st.markdown("---")
+            st.session_state.last_answer = matches
         else:
             with st.spinner("Fetching info from AI..."):
-                answer = ask_openai(user_question)
-                st.success(answer)
+                st.session_state.last_answer = ask_openai(user_question)
+
+# Show results if available
+if st.session_state.last_answer:
+    if isinstance(st.session_state.last_answer, list):
+        st.subheader("📋 Best Matches from Database:")
+        for i, row in enumerate(st.session_state.last_answer, start=1):
+            with st.container():
+                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                st.markdown("---")
+    else:
+        st.success(st.session_state.last_answer)
 
 # Voice Input
 st.subheader("🎤 Voice Input")
@@ -117,23 +131,16 @@ if st.button("Transcribe Voice"):
         try:
             audio_data = sr.AudioData(audio_bytes, 16000, 2)
             text = recognizer.recognize_google(audio_data)
-            st.success(f"🗣️ You said: {text}")
 
+            st.session_state.last_query = text
             matches = search_faq(text)
             if matches:
-                st.subheader("📋 Best Matches from Database:")
-                for i, row in enumerate(matches, start=1):
-                    with st.container():
-                        st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
-                        st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
-                        st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
-                        st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                        st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
-                        st.markdown("---")
+                st.session_state.last_answer = matches
             else:
                 with st.spinner("Fetching info from AI..."):
-                    answer = ask_openai(text)
-                    st.success(answer)
+                    st.session_state.last_answer = ask_openai(text)
+
+            st.success(f"🗣️ You said: {text}")
         except Exception as e:
             st.error(f"⚠️ Could not transcribe: {e}")
 
