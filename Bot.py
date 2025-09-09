@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 import random
-from openai import OpenAI
 from rapidfuzz import fuzz
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
 import queue
 import speech_recognition as sr
+import google.generativeai as genai
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -38,29 +38,27 @@ def search_faq(user_input, top_n=3):
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 3. OpenAI Fallback Function
+# 3. Gemini Fallback Function
 # ------------------------------
-def ask_openai(user_input):
-    """Get response from OpenAI GPT if FAQ fails"""
+def ask_gemini(user_input):
+    """Get response from Gemini if FAQ fails"""
     try:
-        api_key = st.secrets["OPENAI_API_KEY"]
+        api_key = st.secrets["GOOGLE_API_KEY"]
     except Exception:
-        return "⚠️ OpenAI API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
+        return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
 
-    client = OpenAI(api_key=api_key)
+    genai.configure(api_key=api_key)
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful health awareness assistant. Never give prescriptions, only awareness and prevention info."},
-                {"role": "user", "content": user_input}
-            ],
-            max_tokens=250
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(
+            f"You are a helpful health awareness assistant. "
+            f"Never give prescriptions, only awareness and prevention info.\n\n"
+            f"User question: {user_input}"
         )
-        return response.choices[0].message.content
+        return response.text
     except Exception as e:
-        return f"⚠️ Error while contacting OpenAI: {e}"
+        return f"⚠️ Error while contacting Gemini: {e}"
 
 # ------------------------------
 # 4. Voice Input Setup
@@ -81,7 +79,7 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and awareness tips.")
 
-# Use session state to persist user input/results
+# Use session state to persist queries & results
 if "last_query" not in st.session_state:
     st.session_state.last_query = None
 if "last_answer" not in st.session_state:
@@ -90,15 +88,15 @@ if "last_answer" not in st.session_state:
 # Text input with Enter button
 user_question = st.text_input("Type your question here:")
 
-if st.button("Submit"):
+if st.button("Submit") or user_question:  # pressing Enter submits automatically
     if user_question:
         st.session_state.last_query = user_question
         matches = search_faq(user_question)
         if matches:
             st.session_state.last_answer = matches
         else:
-            with st.spinner("Fetching info from AI..."):
-                st.session_state.last_answer = ask_openai(user_question)
+            with st.spinner("Fetching info from Gemini..."):
+                st.session_state.last_answer = ask_gemini(user_question)
 
 # Show results if available
 if st.session_state.last_answer:
@@ -137,8 +135,8 @@ if st.button("Transcribe Voice"):
             if matches:
                 st.session_state.last_answer = matches
             else:
-                with st.spinner("Fetching info from AI..."):
-                    st.session_state.last_answer = ask_openai(text)
+                with st.spinner("Fetching info from Gemini..."):
+                    st.session_state.last_answer = ask_gemini(text)
 
             st.success(f"🗣️ You said: {text}")
         except Exception as e:
