@@ -3,6 +3,8 @@ import pandas as pd
 import random
 from rapidfuzz import fuzz
 import google.generativeai as genai
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
+import speech_recognition as sr
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -14,9 +16,9 @@ except FileNotFoundError:
     st.stop()
 
 # ------------------------------
-# 2. FAQ Search Function (Top 3 Matches with threshold)
+# 2. FAQ Search Function
 # ------------------------------
-def search_faq(user_input, top_n=3, min_score=60):
+def search_faq(user_input, top_n=3, min_score=70):
     """Search FAQ and return top N best matches only if score is good enough"""
     user_input = user_input.lower()
     scores = []
@@ -68,11 +70,26 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips.")
 
-# User input
+# Text input with Submit button
 user_question = st.text_input("Type your question here:")
+submit_btn = st.button("Submit")
 
-if user_question:
-    # Try FAQ first
+# Voice recognition button
+if st.button("🎤 Speak Your Question"):
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        st.info("🎙️ Listening... please speak now")
+        audio = recognizer.listen(source, phrase_time_limit=5)
+        try:
+            user_question = recognizer.recognize_google(audio)
+            st.success(f"You said: {user_question}")
+        except sr.UnknownValueError:
+            st.error("❌ Sorry, I could not understand your voice.")
+        except sr.RequestError:
+            st.error("❌ Could not connect to speech recognition service.")
+
+# Process only after Submit
+if submit_btn and user_question:
     matches = search_faq(user_question)
 
     if matches:
