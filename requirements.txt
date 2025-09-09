@@ -4,3 +4,5 @@ openai
 rapidfuzz
 streamlit-webrtc
 SpeechRecognition
+google-generativeai
+
