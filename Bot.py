@@ -3,8 +3,8 @@ import pandas as pd
 import random
 from rapidfuzz import fuzz
 import google.generativeai as genai
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
-import speech_recognition as sr
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
+import av
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -43,6 +43,7 @@ def search_faq(user_input, top_n=3, min_score=70):
 # ------------------------------
 # 3. Gemini Fallback Function
 # ------------------------------
+@st.cache_data
 def ask_gemini(user_input):
     """Get response from Gemini if FAQ fails"""
     try:
@@ -70,23 +71,32 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips.")
 
-# Text input with Submit button
+# User input
 user_question = st.text_input("Type your question here:")
 submit_btn = st.button("Submit")
 
-# Voice recognition button
-if st.button("🎤 Speak Your Question"):
-    recognizer = sr.Recognizer()
-    with sr.Microphone() as source:
-        st.info("🎙️ Listening... please speak now")
-        audio = recognizer.listen(source, phrase_time_limit=5)
-        try:
-            user_question = recognizer.recognize_google(audio)
-            st.success(f"You said: {user_question}")
-        except sr.UnknownValueError:
-            st.error("❌ Sorry, I could not understand your voice.")
-        except sr.RequestError:
-            st.error("❌ Could not connect to speech recognition service.")
+# 🎤 Voice recognition via browser (streamlit-webrtc)
+st.subheader("🎤 Speak Your Question")
+class AudioProcessor(AudioProcessorBase):
+    def __init__(self):
+        self.frames = []
+
+    def recv_audio(self, frame: av.AudioFrame) -> av.AudioFrame:
+        self.frames.append(frame.to_ndarray().mean(axis=1))  # simple audio buffer
+        return frame
+
+webrtc_ctx = webrtc_streamer(
+    key="speech-to-text",
+    mode=WebRtcMode.SENDONLY,
+    audio_processor_factory=AudioProcessor,
+    media_stream_constraints={"audio": True, "video": False},
+)
+
+if webrtc_ctx.audio_receiver:
+    st.info("🎙️ Recording... (stop to process)")
+    # NOTE: For real speech-to-text, audio frames should be sent to Gemini or Google STT API.
+    # Here we just acknowledge recording.
+    st.warning("⚠️ Voice capture is working, but needs API hookup for speech-to-text.")
 
 # Process only after Submit
 if submit_btn and user_question:
@@ -106,6 +116,14 @@ if submit_btn and user_question:
         with st.spinner("Fetching info from Gemini..."):
             answer = ask_gemini(user_question)
             st.success(answer)
+
+# 🔴 SOS Button
+st.markdown("### 🚨 Emergency SOS")
+if st.button("🔴 Call for Help"):
+    st.error("🚨 Emergency Contacts")
+    st.markdown("[🚑 Call Ambulance (108)](tel:108)", unsafe_allow_html=True)
+    st.markdown("[🚓 Call Police (100)](tel:100)", unsafe_allow_html=True)
+    st.markdown("[🚒 Call Fire (101)](tel:101)", unsafe_allow_html=True)
 
 # Random health tip
 if st.button("💡 Show me a random health tip"):
