@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import random
-import os
 import google.generativeai as genai
 
 # ------------------------------
@@ -16,14 +15,19 @@ except FileNotFoundError:
 # ------------------------------
 # 2. Configure Gemini
 # ------------------------------
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+except Exception:
+    st.error("⚠️ Gemini API key not found. Please add GEMINI_API_KEY in Streamlit Cloud → App → Settings → Secrets.")
+    st.stop()
+
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ------------------------------
-# 3. FAQ Search Function
+# 3. FAQ Search Function (Top 3 Matches)
 # ------------------------------
 def search_faq(user_input, top_n=3):
+    """Search FAQ and return top N best matches"""
     user_input = user_input.lower()
     scores = []
 
@@ -31,27 +35,27 @@ def search_faq(user_input, top_n=3):
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
 
+        # Score = keyword overlap
         score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
 
-        if score > 0:
+        if score > 0:  # Only consider relevant rows
             scores.append((score, row))
 
+    # Sort by score (highest first) and pick top N
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
+
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
 # 4. Gemini Fallback Function
 # ------------------------------
 def ask_gemini(user_input):
-    if not GEMINI_API_KEY:
-        return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
-
+    """Get response from Gemini if FAQ fails"""
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
             f"You are a helpful health awareness assistant. "
-            f"Only provide awareness, symptoms, and prevention info. No prescriptions.\n\n"
-            f"User: {user_input}"
+            f"Answer in the same language as the user. "
+            f"Never give prescriptions, only awareness and prevention info.\n\nUser: {user_input}"
         )
         return response.text
     except Exception as e:
@@ -62,64 +66,31 @@ def ask_gemini(user_input):
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
-st.write("Ask about diseases, symptoms, and prevention tips.")
+st.write("Ask about diseases, symptoms, and prevention tips in **any language** 🌍")
 
-# Hidden text area for capturing voice input
-voice_input = st.text_area("Voice Capture", "", key="voice_input", label_visibility="collapsed")
+# User input
+user_question = st.text_input("Type your question here:")
 
-# JavaScript for speech recognition
-st.markdown(
-    """
-    <script>
-    function startListening() {
-        if (!('webkitSpeechRecognition' in window)) {
-            alert("⚠️ Your browser does not support Speech Recognition.");
-            return;
-        }
-        var recognition = new webkitSpeechRecognition();
-        recognition.lang = "en-US";
-        recognition.start();
-        recognition.onresult = function(event) {
-            var transcript = event.results[0][0].transcript;
-            var textarea = window.parent.document.querySelector('textarea[data-testid="stTextArea"]');
-            if (textarea) {
-                textarea.value = transcript;
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        };
-    }
-    </script>
-    """,
-    unsafe_allow_html=True
-)
+if user_question:
+    # Step 1: Search FAQ
+    matches = search_faq(user_question)
 
-# Input field + Voice button
-col1, col2 = st.columns([4, 1])
-with col1:
-    user_question = st.text_input("Type your question here:", value=voice_input)
-with col2:
-    st.markdown('<button onclick="startListening()" style="margin-top:25px;">🎤</button>', unsafe_allow_html=True)
-
-# Submit button
-if st.button("Ask"):
-    if user_question:
-        with st.spinner("⏳ Fetching info..."):
-            matches = search_faq(user_question)
-
-            if matches:
-                st.subheader("📋 Best Matches from Database:")
-                for i, row in enumerate(matches, start=1):
-                    with st.container():
-                        st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
-                        st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
-                        st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
-                        st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                        st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
-                        st.markdown("---")
-            else:
-                answer = ask_gemini(user_question)
-                st.subheader("🤖 AI Response")
-                st.write(answer)
+    if matches:
+        st.subheader("📋 Best Matches from Database:")
+        for i, row in enumerate(matches, start=1):
+            answer = f"""
+🦠 Disease: {row.get('Disease', 'N/A')}
+📝 Symptoms: {row.get('Common Symptoms', 'N/A')}
+📌 Notes: {row.get('Notes', 'N/A')}
+⚠️ Severity: {row.get('Severity Tagging', 'N/A')}
+💡 Advice: {row.get('Disclaimers & Advice', 'N/A')}
+"""
+            st.markdown(f"### {i}. \n{answer}")
+            st.markdown("---")
+    else:
+        with st.spinner("Fetching info from Gemini..."):
+            ai_answer = ask_gemini(user_question)
+            st.success(ai_answer)
 
 # Random health tip
 if st.button("💡 Show me a random health tip"):
@@ -132,12 +103,12 @@ if st.button("💡 Show me a random health tip"):
     ]
     st.warning(random.choice(tips))
 
-# SOS Button → Phone Dialer (changed to 108 🚨)
+# SOS Button
 st.markdown(
     """
     <a href="tel:108">
-        <button style="background-color:red;color:white;padding:15px 30px;border:none;border-radius:10px;font-size:18px;margin-top:20px;">
-            🚨 SOS
+        <button style="background-color:red; color:white; padding:10px; border:none; border-radius:8px; font-size:16px;">
+            🚨 SOS - Call 108
         </button>
     </a>
     """,
