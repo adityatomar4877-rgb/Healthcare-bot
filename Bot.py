@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
 import random
-from rapidfuzz import fuzz
+import os
 import google.generativeai as genai
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
-import av
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -16,10 +14,16 @@ except FileNotFoundError:
     st.stop()
 
 # ------------------------------
-# 2. FAQ Search Function
+# 2. Configure Gemini
 # ------------------------------
-def search_faq(user_input, top_n=3, min_score=70):
-    """Search FAQ and return top N best matches only if score is good enough"""
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+# ------------------------------
+# 3. FAQ Search Function
+# ------------------------------
+def search_faq(user_input, top_n=3):
     user_input = user_input.lower()
     scores = []
 
@@ -27,103 +31,92 @@ def search_faq(user_input, top_n=3, min_score=70):
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
 
-        # fuzzy match against disease and symptoms
-        score = max(
-            fuzz.partial_ratio(user_input, disease),
-            fuzz.partial_ratio(user_input, symptoms)
-        )
+        score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
 
-        if score >= min_score:  # ✅ only keep relevant matches
+        if score > 0:
             scores.append((score, row))
 
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
-
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 3. Gemini Fallback Function
+# 4. Gemini Fallback Function
 # ------------------------------
-@st.cache_data
 def ask_gemini(user_input):
-    """Get response from Gemini if FAQ fails"""
-    try:
-        api_key = st.secrets["GEMINI_API_KEY"]
-    except Exception:
+    if not GEMINI_API_KEY:
         return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
-
-    genai.configure(api_key=api_key)
 
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
             f"You are a helpful health awareness assistant. "
-            f"Never give prescriptions. Only share awareness, symptoms, and prevention info.\n\n"
-            f"User question: {user_input}"
+            f"Only provide awareness, symptoms, and prevention info. No prescriptions.\n\n"
+            f"User: {user_input}"
         )
         return response.text
     except Exception as e:
         return f"⚠️ Error while contacting Gemini: {e}"
 
 # ------------------------------
-# 4. Streamlit UI
+# 5. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips.")
 
-# User input
-user_question = st.text_input("Type your question here:")
-submit_btn = st.button("Submit")
-
-# 🎤 Voice recognition via browser (streamlit-webrtc)
-st.subheader("🎤 Speak Your Question")
-class AudioProcessor(AudioProcessorBase):
-    def __init__(self):
-        self.frames = []
-
-    def recv_audio(self, frame: av.AudioFrame) -> av.AudioFrame:
-        self.frames.append(frame.to_ndarray().mean(axis=1))  # simple audio buffer
-        return frame
-
-webrtc_ctx = webrtc_streamer(
-    key="speech-to-text",
-    mode=WebRtcMode.SENDONLY,
-    audio_processor_factory=AudioProcessor,
-    media_stream_constraints={"audio": True, "video": False},
+# Voice Input Button (Web Speech API injection)
+st.markdown(
+    """
+    <script>
+    function startListening() {
+        if (!('webkitSpeechRecognition' in window)) {
+            alert("⚠️ Your browser does not support Speech Recognition.");
+            return;
+        }
+        var recognition = new webkitSpeechRecognition();
+        recognition.lang = "en-US";
+        recognition.start();
+        recognition.onresult = function(event) {
+            var transcript = event.results[0][0].transcript;
+            var inputBox = window.parent.document.querySelector('input[type="text"]');
+            if (inputBox) {
+                inputBox.value = transcript;
+                inputBox.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        };
+    }
+    </script>
+    """,
+    unsafe_allow_html=True
 )
 
-if webrtc_ctx.audio_receiver:
-    st.info("🎙️ Recording... (stop to process)")
-    # NOTE: For real speech-to-text, audio frames should be sent to Gemini or Google STT API.
-    # Here we just acknowledge recording.
-    st.warning("⚠️ Voice capture is working, but needs API hookup for speech-to-text.")
+# User Input
+col1, col2 = st.columns([4,1])
+with col1:
+    user_question = st.text_input("Type your question here:")
+with col2:
+    st.markdown('<button onclick="startListening()" style="margin-top:25px;">🎤</button>', unsafe_allow_html=True)
 
-# Process only after Submit
-if submit_btn and user_question:
-    matches = search_faq(user_question)
+# Submit button
+if st.button("Ask"):
+    if user_question:
+        with st.spinner("⏳ Fetching info..."):
+            matches = search_faq(user_question)
 
-    if matches:
-        st.subheader("📋 Best Matches from Database:")
-        for i, row in enumerate(matches, start=1):
-            with st.container():
-                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
-                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
-                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
-                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
-                st.markdown("---")
-    else:
-        with st.spinner("Fetching info from Gemini..."):
-            answer = ask_gemini(user_question)
-            st.success(answer)
-
-# 🔴 SOS Button
-st.markdown("### 🚨 Emergency SOS")
-if st.button("🔴 Call for Help"):
-    st.error("🚨 Emergency Contacts")
-    st.markdown("[🚑 Call Ambulance (108)](tel:108)", unsafe_allow_html=True)
-    st.markdown("[🚓 Call Police (100)](tel:100)", unsafe_allow_html=True)
-    st.markdown("[🚒 Call Fire (101)](tel:101)", unsafe_allow_html=True)
+            if matches:
+                st.subheader("📋 Best Matches from Database:")
+                for i, row in enumerate(matches, start=1):
+                    with st.container():
+                        st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                        st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                        st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                        st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                        st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                        st.markdown("---")
+            else:
+                answer = ask_gemini(user_question)
+                st.subheader("🤖 AI Response")
+                st.write(answer)
 
 # Random health tip
 if st.button("💡 Show me a random health tip"):
@@ -135,3 +128,15 @@ if st.button("💡 Show me a random health tip"):
         "Exercise at least 30 minutes every day."
     ]
     st.warning(random.choice(tips))
+
+# SOS Button → Phone Dialer
+st.markdown(
+    """
+    <a href="tel:112">
+        <button style="background-color:red;color:white;padding:15px 30px;border:none;border-radius:10px;font-size:18px;margin-top:20px;">
+            🚨 SOS
+        </button>
+    </a>
+    """,
+    unsafe_allow_html=True
+)
