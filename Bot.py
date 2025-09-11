@@ -64,7 +64,10 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips.")
 
-# Inject JavaScript for voice input
+# Hidden text area for capturing voice input
+voice_input = st.text_area("Voice Capture", "", key="voice_input", label_visibility="collapsed")
+
+# JavaScript for speech recognition
 st.markdown(
     """
     <script>
@@ -78,11 +81,10 @@ st.markdown(
         recognition.start();
         recognition.onresult = function(event) {
             var transcript = event.results[0][0].transcript;
-            // Find the first text input box inside Streamlit
-            var inputBox = window.parent.document.querySelector('[data-testid="stTextInput"] input');
-            if (inputBox) {
-                inputBox.value = transcript;
-                inputBox.dispatchEvent(new Event('input', { bubbles: true }));
+            var textarea = window.parent.document.querySelector('textarea[data-testid="stTextArea"]');
+            if (textarea) {
+                textarea.value = transcript;
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
             }
         };
     }
@@ -91,10 +93,10 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# User Input
-col1, col2 = st.columns([4,1])
+# Input field + Voice button
+col1, col2 = st.columns([4, 1])
 with col1:
-    user_question = st.text_input("Type your question here:")
+    user_question = st.text_input("Type your question here:", value=voice_input)
 with col2:
     st.markdown('<button onclick="startListening()" style="margin-top:25px;">🎤</button>', unsafe_allow_html=True)
 
