@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import google.generativeai as genai
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 from langdetect import detect
 
 # ------------------------------
@@ -26,38 +26,31 @@ except Exception:
 # ------------------------------
 # 3. Translator Setup
 # ------------------------------
-translator = Translator()
-
 def translate_text(text, target_lang):
-    """Translate text to target language"""
+    """Translate text to target language using deep-translator"""
     if not text or target_lang == "en":
         return text
     try:
-        return translator.translate(text, dest=target_lang).text
+        return GoogleTranslator(source='auto', target=target_lang).translate(text)
     except Exception:
-        return text  # fallback to English if translation fails
+        return text  # fallback to original if translation fails
 
 # ------------------------------
 # 4. FAQ Search Function (Top 3 Matches)
 # ------------------------------
 def search_faq(user_input, top_n=3):
-    """Search FAQ and return top N best matches"""
+    """Search FAQ and return top N best matches based on keyword overlap"""
     user_input = user_input.lower()
     scores = []
 
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
-
-        # Score = keyword overlap
         score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
-
-        if score > 0:  # Only consider relevant rows
+        if score > 0:
             scores.append((score, row))
 
-    # Sort by score (highest first) and pick top N
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
-
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
