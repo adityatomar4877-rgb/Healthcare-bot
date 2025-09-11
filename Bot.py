@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import random
 import google.generativeai as genai
+from googletrans import Translator
+from langdetect import detect
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -24,7 +26,28 @@ except Exception:
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ------------------------------
-# 3. FAQ Search Function (Top 3 Matches)
+# 3. Translator setup
+# ------------------------------
+translator = Translator()
+
+def detect_lang(text):
+    """Detect user language"""
+    try:
+        return detect(text)
+    except:
+        return "en"
+
+def translate_text(text, lang):
+    """Translate English text into user's language"""
+    if lang != "en":
+        try:
+            return translator.translate(text, dest=lang).text
+        except:
+            return text
+    return text
+
+# ------------------------------
+# 4. FAQ Search Function (Top 3 Matches)
 # ------------------------------
 def search_faq(user_input, top_n=3):
     """Search FAQ and return top N best matches"""
@@ -47,7 +70,7 @@ def search_faq(user_input, top_n=3):
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 4. Gemini Fallback Function
+# 5. Gemini Fallback Function
 # ------------------------------
 def ask_gemini(user_input):
     """Get response from Gemini if FAQ fails"""
@@ -62,16 +85,20 @@ def ask_gemini(user_input):
         return f"⚠️ Error while contacting Gemini: {e}"
 
 # ------------------------------
-# 5. Streamlit UI
+# 6. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips in **any language** 🌍")
 
-# User input
+# User input + submit button
 user_question = st.text_input("Type your question here:")
+submit = st.button("➡️ Enter")
 
-if user_question:
+if submit and user_question:
+    # Detect user language
+    user_lang = detect_lang(user_question)
+
     # Step 1: Search FAQ
     matches = search_faq(user_question)
 
@@ -85,7 +112,8 @@ if user_question:
 ⚠️ Severity: {row.get('Severity Tagging', 'N/A')}
 💡 Advice: {row.get('Disclaimers & Advice', 'N/A')}
 """
-            st.markdown(f"### {i}. \n{answer}")
+            translated_answer = translate_text(answer, user_lang)
+            st.markdown(f"### {i}. \n{translated_answer}")
             st.markdown("---")
     else:
         with st.spinner("Fetching info from Gemini..."):
