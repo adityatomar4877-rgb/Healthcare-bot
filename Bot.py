@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import random
 import google.generativeai as genai
+from googletrans import Translator
+from langdetect import detect
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -17,75 +19,125 @@ except FileNotFoundError:
 # ------------------------------
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    gemini_ready = True
 except Exception:
-    st.error("⚠️ Gemini API key not found. Please add GEMINI_API_KEY in Streamlit Cloud → App → Settings → Secrets.")
-    st.stop()
-
-model = genai.GenerativeModel("gemini-1.5-flash")
+    gemini_ready = False
 
 # ------------------------------
-# 3. FAQ Search Function
+# 3. Translator Setup
+# ------------------------------
+translator = Translator()
+
+def translate_text(text, target_lang):
+    """Translate text to target language"""
+    if not text or target_lang == "en":
+        return text
+    try:
+        return translator.translate(text, dest=target_lang).text
+    except Exception:
+        return text  # fallback to English if translation fails
+
+# ------------------------------
+# 4. FAQ Search Function (Top 3 Matches)
 # ------------------------------
 def search_faq(user_input, top_n=3):
+    """Search FAQ and return top N best matches"""
     user_input = user_input.lower()
     scores = []
 
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
+
+        # Score = keyword overlap
         score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
 
-        if score > 0:
+        if score > 0:  # Only consider relevant rows
             scores.append((score, row))
 
+    # Sort by score (highest first) and pick top N
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
+
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 4. Gemini Fallback Function
+# 5. Gemini Fallback Function
 # ------------------------------
-def ask_gemini(user_input):
+def ask_gemini(user_input, target_lang="en"):
+    """Get response from Gemini"""
+    if not gemini_ready:
+        return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
+
     try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
-            f"You are a helpful health awareness assistant. "
-            f"Always reply in the same language as the user. "
-            f"Never give prescriptions, only awareness and prevention info.\n\nUser: {user_input}"
+            f"Answer in {target_lang}. You are a health awareness assistant. "
+            f"Never give prescriptions, only awareness and prevention info.\n\nQuestion: {user_input}"
         )
         return response.text
     except Exception as e:
         return f"⚠️ Error while contacting Gemini: {e}"
 
 # ------------------------------
-# 5. Streamlit UI
+# 6. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
-st.write("Ask about diseases, symptoms, and prevention tips in **any language** 🌍")
+st.write("Ask about diseases, symptoms, and prevention tips.")
 
+# Language map
+lang_map = {
+    "English": "en",
+    "हिंदी (Hindi)": "hi",
+    "தமிழ் (Tamil)": "ta",
+    "বাংলা (Bengali)": "bn",
+    "ગુજરાતી (Gujarati)": "gu",
+    "मराठी (Marathi)": "mr",
+    "తెలుగు (Telugu)": "te",
+    "ಕನ್ನಡ (Kannada)": "kn",
+    "മലയാളം (Malayalam)": "ml",
+    "ਪੰਜਾਬੀ (Punjabi)": "pa",
+    "اردو (Urdu)": "ur",
+    "ଓଡ଼ିଆ (Odia)": "or"
+}
+
+# Manual language selection
+language_choice = st.selectbox("🌐 Choose Language:", list(lang_map.keys()))
+target_lang = lang_map[language_choice]
+
+# User input + Enter button
 user_question = st.text_input("Type your question here:")
-submit = st.button("➡️ Enter")
+
+# Auto-detect language if user typed something
+if user_question.strip():
+    try:
+        detected_lang = detect(user_question)
+        if detected_lang in lang_map.values() and detected_lang != target_lang:
+            target_lang = detected_lang
+            st.info(f"🌐 Auto-detected language switched to: {detected_lang.upper()}")
+    except Exception:
+        pass
+
+submit = st.button("🔍 Search")
 
 if submit and user_question:
+    # Try FAQ first
     matches = search_faq(user_question)
 
     if matches:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
-            answer = f"""
-🦠 Disease: {row.get('Disease', 'N/A')}
-📝 Symptoms: {row.get('Common Symptoms', 'N/A')}
-📌 Notes: {row.get('Notes', 'N/A')}
-⚠️ Severity: {row.get('Severity Tagging', 'N/A')}
-💡 Advice: {row.get('Disclaimers & Advice', 'N/A')}
-"""
-            # Let Gemini translate automatically
-            translated_answer = ask_gemini(f"Translate this into the same language as user query:\n{answer}\n\nUser query: {user_question}")
-            st.markdown(f"### {i}. \n{translated_answer}")
-            st.markdown("---")
+            with st.container():
+                st.markdown(f"### {i}. 🦠 {translate_text(row.get('Disease', 'N/A'), target_lang)}")
+                st.markdown(f"**Symptoms:** {translate_text(row.get('Common Symptoms', 'N/A'), target_lang)}")
+                st.markdown(f"**Notes:** {translate_text(row.get('Notes', 'N/A'), target_lang)}")
+                st.markdown(f"**Severity:** {translate_text(row.get('Severity Tagging', 'N/A'), target_lang)}")
+                st.info(f"⚠️ {translate_text(row.get('Disclaimers & Advice', 'N/A'), target_lang)}")
+                st.markdown("---")
     else:
-        with st.spinner("Fetching info from Gemini..."):
-            ai_answer = ask_gemini(user_question)
-            st.success(ai_answer)
+        with st.spinner("Please Wait Patiently..."):
+            answer = ask_gemini(user_question, target_lang)
+            st.success(answer)
 
 # Random health tip
 if st.button("💡 Show me a random health tip"):
@@ -96,16 +148,4 @@ if st.button("💡 Show me a random health tip"):
         "Eat fresh fruits and vegetables daily.",
         "Exercise at least 30 minutes every day."
     ]
-    st.warning(random.choice(tips))
-
-# SOS Button
-st.markdown(
-    """
-    <a href="tel:108">
-        <button style="background-color:red; color:white; padding:10px; border:none; border-radius:8px; font-size:16px;">
-            🚨 SOS - Call 108
-        </button>
-    </a>
-    """,
-    unsafe_allow_html=True
-)
+    st.warning(translate_text(random.choice(tips), target_lang))
