@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import random
 import google.generativeai as genai
-from googletrans import Translator
 from langdetect import detect
 
 # ------------------------------
@@ -26,54 +25,48 @@ except Exception:
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ------------------------------
-# 3. Translator setup
+# 3. Detect language
 # ------------------------------
-translator = Translator()
-
 def detect_lang(text):
-    """Detect user language"""
     try:
         return detect(text)
     except:
         return "en"
 
-def translate_text(text, lang):
-    """Translate English text into user's language"""
-    if lang != "en":
-        try:
-            return translator.translate(text, dest=lang).text
-        except:
-            return text
-    return text
+def translate_with_gemini(text, lang):
+    """Translate English text to user's language using Gemini"""
+    if lang == "en":
+        return text
+    try:
+        response = model.generate_content(
+            f"Translate the following text into {lang}. Only return the translated text, nothing else.\n\n{text}"
+        )
+        return response.text.strip()
+    except:
+        return text
 
 # ------------------------------
-# 4. FAQ Search Function (Top 3 Matches)
+# 4. FAQ Search Function
 # ------------------------------
 def search_faq(user_input, top_n=3):
-    """Search FAQ and return top N best matches"""
     user_input = user_input.lower()
     scores = []
 
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
-
-        # Score = keyword overlap
         score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
 
-        if score > 0:  # Only consider relevant rows
+        if score > 0:
             scores.append((score, row))
 
-    # Sort by score (highest first) and pick top N
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
-
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
 # 5. Gemini Fallback Function
 # ------------------------------
 def ask_gemini(user_input):
-    """Get response from Gemini if FAQ fails"""
     try:
         response = model.generate_content(
             f"You are a helpful health awareness assistant. "
@@ -91,15 +84,11 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips in **any language** 🌍")
 
-# User input + submit button
 user_question = st.text_input("Type your question here:")
 submit = st.button("➡️ Enter")
 
 if submit and user_question:
-    # Detect user language
     user_lang = detect_lang(user_question)
-
-    # Step 1: Search FAQ
     matches = search_faq(user_question)
 
     if matches:
@@ -112,7 +101,7 @@ if submit and user_question:
 ⚠️ Severity: {row.get('Severity Tagging', 'N/A')}
 💡 Advice: {row.get('Disclaimers & Advice', 'N/A')}
 """
-            translated_answer = translate_text(answer, user_lang)
+            translated_answer = translate_with_gemini(answer, user_lang)
             st.markdown(f"### {i}. \n{translated_answer}")
             st.markdown("---")
     else:
