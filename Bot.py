@@ -64,7 +64,7 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips.")
 
-# Voice Input Button (Web Speech API injection)
+# Inject JavaScript for voice input
 st.markdown(
     """
     <script>
@@ -78,7 +78,8 @@ st.markdown(
         recognition.start();
         recognition.onresult = function(event) {
             var transcript = event.results[0][0].transcript;
-            var inputBox = window.parent.document.querySelector('input[type="text"]');
+            // Find the first text input box inside Streamlit
+            var inputBox = window.parent.document.querySelector('[data-testid="stTextInput"] input');
             if (inputBox) {
                 inputBox.value = transcript;
                 inputBox.dispatchEvent(new Event('input', { bubbles: true }));
@@ -129,10 +130,10 @@ if st.button("💡 Show me a random health tip"):
     ]
     st.warning(random.choice(tips))
 
-# SOS Button → Phone Dialer
+# SOS Button → Phone Dialer (changed to 108 🚨)
 st.markdown(
     """
-    <a href="tel:112">
+    <a href="tel:108">
         <button style="background-color:red;color:white;padding:15px 30px;border:none;border-radius:10px;font-size:18px;margin-top:20px;">
             🚨 SOS
         </button>
