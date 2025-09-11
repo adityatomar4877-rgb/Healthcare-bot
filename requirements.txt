@@ -4,3 +4,5 @@ rapidfuzz
 google-generativeai
 streamlit-webrtc
 SpeechRecognition
+deep-translator
+
