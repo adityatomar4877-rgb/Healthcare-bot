@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import random
 import google.generativeai as genai
-from deep_translator import GoogleTranslator
 from langdetect import detect
 
 # ------------------------------
@@ -24,22 +23,9 @@ except Exception:
     gemini_ready = False
 
 # ------------------------------
-# 3. Translator Setup
-# ------------------------------
-def translate_text(text, target_lang):
-    """Translate text to target language using deep-translator"""
-    if not text or target_lang == "en":
-        return text
-    try:
-        return GoogleTranslator(source='auto', target=target_lang).translate(text)
-    except Exception:
-        return text  # fallback to original if translation fails
-
-# ------------------------------
-# 4. FAQ Search Function (Top 3 Matches)
+# 3. FAQ Search Function (Top 3 Matches)
 # ------------------------------
 def search_faq(user_input, top_n=3):
-    """Search FAQ and return top N best matches based on keyword overlap"""
     user_input = user_input.lower()
     scores = []
 
@@ -54,25 +40,26 @@ def search_faq(user_input, top_n=3):
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 5. Gemini Fallback Function
+# 4. Gemini Response Function (with Translation)
 # ------------------------------
 def ask_gemini(user_input, target_lang="en"):
-    """Get response from Gemini"""
+    """Get response from Gemini in target language"""
     if not gemini_ready:
         return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
 
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
-            f"Answer in {target_lang}. You are a health awareness assistant. "
-            f"Never give prescriptions, only awareness and prevention info.\n\nQuestion: {user_input}"
+            f"You are a healthcare awareness assistant. "
+            f"Answer in {target_lang}. Never give prescriptions, only awareness and prevention info.\n\n"
+            f"Question: {user_input}"
         )
         return response.text
     except Exception as e:
         return f"⚠️ Error while contacting Gemini: {e}"
 
 # ------------------------------
-# 6. Streamlit UI
+# 5. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
@@ -98,10 +85,10 @@ lang_map = {
 language_choice = st.selectbox("🌐 Choose Language:", list(lang_map.keys()))
 target_lang = lang_map[language_choice]
 
-# User input + Enter button
+# User input
 user_question = st.text_input("Type your question here:")
 
-# Auto-detect language if user typed something
+# Auto-detect language
 if user_question.strip():
     try:
         detected_lang = detect(user_question)
@@ -114,18 +101,17 @@ if user_question.strip():
 submit = st.button("🔍 Search")
 
 if submit and user_question:
-    # Try FAQ first
+    # First try FAQ
     matches = search_faq(user_question)
-
     if matches:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
             with st.container():
-                st.markdown(f"### {i}. 🦠 {translate_text(row.get('Disease', 'N/A'), target_lang)}")
-                st.markdown(f"**Symptoms:** {translate_text(row.get('Common Symptoms', 'N/A'), target_lang)}")
-                st.markdown(f"**Notes:** {translate_text(row.get('Notes', 'N/A'), target_lang)}")
-                st.markdown(f"**Severity:** {translate_text(row.get('Severity Tagging', 'N/A'), target_lang)}")
-                st.info(f"⚠️ {translate_text(row.get('Disclaimers & Advice', 'N/A'), target_lang)}")
+                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
+                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
+                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
+                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
+                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
                 st.markdown("---")
     else:
         with st.spinner("Please Wait Patiently..."):
@@ -141,4 +127,9 @@ if st.button("💡 Show me a random health tip"):
         "Eat fresh fruits and vegetables daily.",
         "Exercise at least 30 minutes every day."
     ]
-    st.warning(translate_text(random.choice(tips), target_lang))
+    # Get translated tip via Gemini if not English
+    if target_lang != "en":
+        tip_text = ask_gemini(f"Translate this into {target_lang}: {random.choice(tips)}", target_lang)
+        st.warning(tip_text)
+    else:
+        st.warning(random.choice(tips))
