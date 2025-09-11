@@ -23,9 +23,26 @@ except Exception:
     gemini_ready = False
 
 # ------------------------------
-# 3. FAQ Search Function (Top 3 Matches)
+# 3. Gemini Translation Function
+# ------------------------------
+def translate_via_gemini(text, target_lang="en"):
+    """Translate any text using Gemini"""
+    if not gemini_ready or target_lang == "en" or not text.strip():
+        return text
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(
+            f"Translate the following text to {target_lang}:\n\n{text}"
+        )
+        return response.text
+    except Exception:
+        return text  # fallback to original
+
+# ------------------------------
+# 4. FAQ Search Function
 # ------------------------------
 def search_faq(user_input, top_n=3):
+    """Search FAQ and return top N best matches based on keyword overlap"""
     user_input = user_input.lower()
     scores = []
 
@@ -40,13 +57,12 @@ def search_faq(user_input, top_n=3):
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 4. Gemini Response Function (with Translation)
+# 5. Gemini Fallback Function
 # ------------------------------
 def ask_gemini(user_input, target_lang="en"):
     """Get response from Gemini in target language"""
     if not gemini_ready:
         return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
-
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
@@ -59,7 +75,7 @@ def ask_gemini(user_input, target_lang="en"):
         return f"⚠️ Error while contacting Gemini: {e}"
 
 # ------------------------------
-# 5. Streamlit UI
+# 6. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
@@ -107,18 +123,20 @@ if submit and user_question:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
             with st.container():
-                st.markdown(f"### {i}. 🦠 {row.get('Disease', 'N/A')}")
-                st.markdown(f"**Symptoms:** {row.get('Common Symptoms', 'N/A')}")
-                st.markdown(f"**Notes:** {row.get('Notes', 'N/A')}")
-                st.markdown(f"**Severity:** {row.get('Severity Tagging', 'N/A')}")
-                st.info(f"⚠️ {row.get('Disclaimers & Advice', 'N/A')}")
+                st.markdown(f"### {i}. 🦠 {translate_via_gemini(row.get('Disease','N/A'), target_lang)}")
+                st.markdown(f"**Symptoms:** {translate_via_gemini(row.get('Common Symptoms','N/A'), target_lang)}")
+                st.markdown(f"**Notes:** {translate_via_gemini(row.get('Notes','N/A'), target_lang)}")
+                st.markdown(f"**Severity:** {translate_via_gemini(row.get('Severity Tagging','N/A'), target_lang)}")
+                st.info(f"⚠️ {translate_via_gemini(row.get('Disclaimers & Advice','N/A'), target_lang)}")
                 st.markdown("---")
     else:
         with st.spinner("Please Wait Patiently..."):
             answer = ask_gemini(user_question, target_lang)
             st.success(answer)
 
-# Random health tip
+# ------------------------------
+# 7. Random Health Tip
+# ------------------------------
 if st.button("💡 Show me a random health tip"):
     tips = [
         "Wash your hands regularly with soap and water.",
@@ -127,9 +145,19 @@ if st.button("💡 Show me a random health tip"):
         "Eat fresh fruits and vegetables daily.",
         "Exercise at least 30 minutes every day."
     ]
-    # Get translated tip via Gemini if not English
+    tip = random.choice(tips)
     if target_lang != "en":
-        tip_text = ask_gemini(f"Translate this into {target_lang}: {random.choice(tips)}", target_lang)
-        st.warning(tip_text)
-    else:
-        st.warning(random.choice(tips))
+        tip = ask_gemini(f"Translate this to {target_lang}: {tip}", target_lang)
+    st.warning(tip)
+
+# ------------------------------
+# 8. SOS / Help Button
+# ------------------------------
+if st.button("🆘 Emergency / SOS"):
+    sos_message = (
+        "If this is a medical emergency, please contact your nearest healthcare provider immediately. "
+        "You can also call local emergency numbers."
+    )
+    if target_lang != "en":
+        sos_message = ask_gemini(f"Translate this to {target_lang}: {sos_message}", target_lang)
+    st.error(sos_message)
