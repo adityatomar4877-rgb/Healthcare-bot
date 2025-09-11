@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import random
 import google.generativeai as genai
-from langdetect import detect
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -25,28 +24,7 @@ except Exception:
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ------------------------------
-# 3. Detect language
-# ------------------------------
-def detect_lang(text):
-    try:
-        return detect(text)
-    except:
-        return "en"
-
-def translate_with_gemini(text, lang):
-    """Translate English text to user's language using Gemini"""
-    if lang == "en":
-        return text
-    try:
-        response = model.generate_content(
-            f"Translate the following text into {lang}. Only return the translated text, nothing else.\n\n{text}"
-        )
-        return response.text.strip()
-    except:
-        return text
-
-# ------------------------------
-# 4. FAQ Search Function
+# 3. FAQ Search Function
 # ------------------------------
 def search_faq(user_input, top_n=3):
     user_input = user_input.lower()
@@ -64,13 +42,13 @@ def search_faq(user_input, top_n=3):
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 5. Gemini Fallback Function
+# 4. Gemini Fallback Function
 # ------------------------------
 def ask_gemini(user_input):
     try:
         response = model.generate_content(
             f"You are a helpful health awareness assistant. "
-            f"Answer in the same language as the user. "
+            f"Always reply in the same language as the user. "
             f"Never give prescriptions, only awareness and prevention info.\n\nUser: {user_input}"
         )
         return response.text
@@ -78,7 +56,7 @@ def ask_gemini(user_input):
         return f"⚠️ Error while contacting Gemini: {e}"
 
 # ------------------------------
-# 6. Streamlit UI
+# 5. Streamlit UI
 # ------------------------------
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
@@ -88,7 +66,6 @@ user_question = st.text_input("Type your question here:")
 submit = st.button("➡️ Enter")
 
 if submit and user_question:
-    user_lang = detect_lang(user_question)
     matches = search_faq(user_question)
 
     if matches:
@@ -101,7 +78,8 @@ if submit and user_question:
 ⚠️ Severity: {row.get('Severity Tagging', 'N/A')}
 💡 Advice: {row.get('Disclaimers & Advice', 'N/A')}
 """
-            translated_answer = translate_with_gemini(answer, user_lang)
+            # Let Gemini translate automatically
+            translated_answer = ask_gemini(f"Translate this into the same language as user query:\n{answer}\n\nUser query: {user_question}")
             st.markdown(f"### {i}. \n{translated_answer}")
             st.markdown("---")
     else:
