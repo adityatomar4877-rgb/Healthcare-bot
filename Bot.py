@@ -27,17 +27,13 @@ except Exception:
 # 3. Gemini Translation Functions
 # ------------------------------
 def translate_via_gemini(text, target_lang="en"):
-    """Translate text to target language using Gemini (pure translation only)"""
+    """Translate text to target language using Gemini"""
     if not gemini_ready or target_lang == "en" or not text.strip():
         return text
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(
-            f"Translate the following text into {target_lang}. "
-            f"Return only the translated text in {target_lang}, without explanations, notes, transliteration, or English."
-            f"\n\n{text}"
-        )
-        return response.text if response and response.text else text
+        response = model.generate_content(f"Translate the following text to {target_lang}:\n\n{text}")
+        return response.text
     except Exception:
         return text
 
@@ -47,10 +43,8 @@ def to_english(text):
         return text
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(
-            f"Translate this to English. Only output English text:\n\n{text}"
-        )
-        return response.text if response and response.text else text
+        response = model.generate_content(f"Translate this to English:\n\n{text}")
+        return response.text
     except Exception:
         return text
 
@@ -67,6 +61,7 @@ def search_faq(user_input, top_n=3):
         symptoms = str(row.get("Common Symptoms", "")).lower()
         notes = str(row.get("Notes", "")).lower()
 
+        # Fuzzy similarity scores
         score = max(
             SequenceMatcher(None, user_input, disease).ratio(),
             SequenceMatcher(None, user_input, symptoms).ratio(),
@@ -90,12 +85,10 @@ def ask_gemini(user_input, target_lang="en"):
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
             f"You are a healthcare awareness assistant. "
-            f"Answer in {target_lang}. "
-            f"Return only the response in {target_lang}, without any explanations or notes. "
-            f"Never give prescriptions, only awareness and prevention info.\n\n"
+            f"Answer in {target_lang}. Never give prescriptions, only awareness and prevention info.\n\n"
             f"Question: {user_input}"
         )
-        return response.text if response and response.text else "⚠️ No response"
+        return response.text
     except Exception as e:
         return f"⚠️ Error while contacting Gemini: {e}"
 
@@ -126,8 +119,8 @@ lang_map = {
 language_choice = st.selectbox("🌐 Choose Language:", list(lang_map.keys()))
 target_lang = lang_map[language_choice]
 
-# User input
-user_question = st.text_input("Type your question here:")
+# User input with Enter key
+user_question = st.text_input("Type your question here and press Enter:", key="input")
 
 # Auto-detect language
 if user_question.strip():
@@ -141,14 +134,14 @@ if user_question.strip():
 
 submit = st.button("🔍 Search")
 
-if submit and user_question:
+if (submit or user_question) and user_question.strip():
     # Step 1: Translate query to English
     query_in_english = to_english(user_question)
 
     # Step 2: Search FAQ
     matches = search_faq(query_in_english)
 
-    if matches:
+    if matches and len(matches) > 0:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
             block = (
