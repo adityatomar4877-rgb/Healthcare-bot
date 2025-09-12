@@ -23,34 +23,42 @@ except Exception:
     gemini_ready = False
 
 # ------------------------------
-# 3. Gemini Translation Function
+# 3. Gemini Translation Functions
 # ------------------------------
 def translate_via_gemini(text, target_lang="en"):
-    """Translate any text using Gemini"""
+    """Translate text to target language using Gemini"""
     if not gemini_ready or target_lang == "en" or not text.strip():
         return text
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(
-            f"Translate the following text to {target_lang}:\n\n{text}"
-        )
+        response = model.generate_content(f"Translate the following text to {target_lang}:\n\n{text}")
         return response.text
     except Exception:
-        return text  # fallback to original
+        return text
+
+def to_english(text):
+    """Translate any text to English (for searching CSV)"""
+    if not gemini_ready or not text.strip():
+        return text
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(f"Translate this to English:\n\n{text}")
+        return response.text
+    except Exception:
+        return text
 
 # ------------------------------
-# 4. FAQ Search Function (improved)
+# 4. FAQ Search Function
 # ------------------------------
 def search_faq(user_input, top_n=3):
-    """Search FAQ with fuzzy matching"""
+    """Search FAQ and return top N best matches based on keyword overlap"""
     user_input = user_input.lower()
     scores = []
 
     for _, row in faq_df.iterrows():
-        row_text = f"{row.get('Disease','')} {row.get('Common Symptoms','')}".lower()
-        score = sum(1 for word in user_input.split() if word in row_text)
-        if user_input in row_text:  # exact phrase boost
-            score += 3
+        disease = str(row.get("Disease", "")).lower()
+        symptoms = str(row.get("Common Symptoms", "")).lower()
+        score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
         if score > 0:
             scores.append((score, row))
 
@@ -118,8 +126,12 @@ if user_question.strip():
 submit = st.button("🔍 Search")
 
 if submit and user_question:
-    # First try FAQ
-    matches = search_faq(user_question)
+    # Step 1: Translate query to English for searching
+    query_in_english = to_english(user_question)
+
+    # Step 2: Search FAQ
+    matches = search_faq(query_in_english)
+
     if matches:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
@@ -155,14 +167,13 @@ if st.button("💡 Show me a random health tip"):
     st.warning(tip)
 
 # ------------------------------
-# 8. SOS / Help Button
+# 8. SOS / Emergency Button
 # ------------------------------
-if st.button("🆘 Emergency / SOS"):
+if st.button("🆘 Emergency / SOS (Call 108)"):
     sos_message = (
-        "🚨 If this is a medical emergency, please contact your nearest healthcare provider immediately.\n"
-        "📞 You can also call emergency number **108** (India) for urgent help."
+        "🚨 If this is a medical emergency, please call **108** immediately "
+        "or contact your nearest healthcare provider."
     )
     if target_lang != "en":
         sos_message = translate_via_gemini(sos_message, target_lang)
     st.error(sos_message)
-    st.markdown("👉 [📞 Call 108](tel:108)")
