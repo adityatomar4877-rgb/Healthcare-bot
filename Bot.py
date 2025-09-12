@@ -3,6 +3,7 @@ import pandas as pd
 import random
 import google.generativeai as genai
 from langdetect import detect
+from difflib import SequenceMatcher
 
 # ------------------------------
 # 1. Load FAQ CSV safely
@@ -48,18 +49,26 @@ def to_english(text):
         return text
 
 # ------------------------------
-# 4. FAQ Search Function
+# 4. FAQ Search Function (fuzzy matching)
 # ------------------------------
 def search_faq(user_input, top_n=3):
-    """Search FAQ and return top N best matches based on keyword overlap"""
+    """Search FAQ using fuzzy string similarity"""
     user_input = user_input.lower()
     scores = []
 
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
-        score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
-        if score > 0:
+        notes = str(row.get("Notes", "")).lower()
+
+        # Fuzzy similarity scores
+        score = max(
+            SequenceMatcher(None, user_input, disease).ratio(),
+            SequenceMatcher(None, user_input, symptoms).ratio(),
+            SequenceMatcher(None, user_input, notes).ratio()
+        )
+
+        if score > 0.3:  # threshold
             scores.append((score, row))
 
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
@@ -126,7 +135,7 @@ if user_question.strip():
 submit = st.button("🔍 Search")
 
 if submit and user_question:
-    # Step 1: Translate query to English for searching
+    # Step 1: Translate query to English
     query_in_english = to_english(user_question)
 
     # Step 2: Search FAQ
@@ -172,7 +181,8 @@ if st.button("💡 Show me a random health tip"):
 if st.button("🆘 Emergency / SOS (Call 108)"):
     sos_message = (
         "🚨 If this is a medical emergency, please call **108** immediately "
-        "or contact your nearest healthcare provider."
+        "or contact your nearest healthcare provider.\n\n"
+        "[📞 Call 108](tel:108)"
     )
     if target_lang != "en":
         sos_message = translate_via_gemini(sos_message, target_lang)
