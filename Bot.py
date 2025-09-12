@@ -51,7 +51,7 @@ def to_english(text):
 # ------------------------------
 # 4. FAQ Search Function (fuzzy matching)
 # ------------------------------
-def search_faq(user_input, top_n=3):
+def search_faq(user_input, top_n=3, threshold=0.6):
     """Search FAQ using fuzzy string similarity"""
     user_input = user_input.lower()
     scores = []
@@ -68,11 +68,11 @@ def search_faq(user_input, top_n=3):
             SequenceMatcher(None, user_input, notes).ratio()
         )
 
-        if score > 0.3:  # threshold
+        if score >= threshold:  # ✅ only accept strong matches
             scores.append((score, row))
 
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
-    return [row for _, row in scores] if scores else None
+    return [row for _, row in scores]
 
 # ------------------------------
 # 5. Gemini Fallback Function
@@ -119,8 +119,8 @@ lang_map = {
 language_choice = st.selectbox("🌐 Choose Language:", list(lang_map.keys()))
 target_lang = lang_map[language_choice]
 
-# User input with Enter key
-user_question = st.text_input("Type your question here and press Enter:", key="input")
+# User input
+user_question = st.text_input("Type your question here:")
 
 # Auto-detect language
 if user_question.strip():
@@ -134,7 +134,7 @@ if user_question.strip():
 
 submit = st.button("🔍 Search")
 
-if (submit or user_question) and user_question.strip():
+if submit and user_question:
     # Step 1: Translate query to English
     query_in_english = to_english(user_question)
 
