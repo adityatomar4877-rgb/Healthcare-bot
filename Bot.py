@@ -39,17 +39,18 @@ def translate_via_gemini(text, target_lang="en"):
         return text  # fallback to original
 
 # ------------------------------
-# 4. FAQ Search Function
+# 4. FAQ Search Function (improved)
 # ------------------------------
 def search_faq(user_input, top_n=3):
-    """Search FAQ and return top N best matches based on keyword overlap"""
+    """Search FAQ with fuzzy matching"""
     user_input = user_input.lower()
     scores = []
 
     for _, row in faq_df.iterrows():
-        disease = str(row.get("Disease", "")).lower()
-        symptoms = str(row.get("Common Symptoms", "")).lower()
-        score = sum(1 for word in user_input.split() if word in disease or word in symptoms)
+        row_text = f"{row.get('Disease','')} {row.get('Common Symptoms','')}".lower()
+        score = sum(1 for word in user_input.split() if word in row_text)
+        if user_input in row_text:  # exact phrase boost
+            score += 3
         if score > 0:
             scores.append((score, row))
 
@@ -122,13 +123,16 @@ if submit and user_question:
     if matches:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
-            with st.container():
-                st.markdown(f"### {i}. 🦠 {translate_via_gemini(row.get('Disease','N/A'), target_lang)}")
-                st.markdown(f"**Symptoms:** {translate_via_gemini(row.get('Common Symptoms','N/A'), target_lang)}")
-                st.markdown(f"**Notes:** {translate_via_gemini(row.get('Notes','N/A'), target_lang)}")
-                st.markdown(f"**Severity:** {translate_via_gemini(row.get('Severity Tagging','N/A'), target_lang)}")
-                st.info(f"⚠️ {translate_via_gemini(row.get('Disclaimers & Advice','N/A'), target_lang)}")
-                st.markdown("---")
+            block = (
+                f"Disease: {row.get('Disease','N/A')}\n"
+                f"Symptoms: {row.get('Common Symptoms','N/A')}\n"
+                f"Notes: {row.get('Notes','N/A')}\n"
+                f"Severity: {row.get('Severity Tagging','N/A')}\n"
+                f"Advice: {row.get('Disclaimers & Advice','N/A')}"
+            )
+            translated_block = translate_via_gemini(block, target_lang)
+            st.info(translated_block)
+            st.markdown("---")
     else:
         with st.spinner("Please Wait Patiently..."):
             answer = ask_gemini(user_question, target_lang)
@@ -147,7 +151,7 @@ if st.button("💡 Show me a random health tip"):
     ]
     tip = random.choice(tips)
     if target_lang != "en":
-        tip = ask_gemini(f"Translate this to {target_lang}: {tip}", target_lang)
+        tip = translate_via_gemini(tip, target_lang)
     st.warning(tip)
 
 # ------------------------------
@@ -155,9 +159,10 @@ if st.button("💡 Show me a random health tip"):
 # ------------------------------
 if st.button("🆘 Emergency / SOS"):
     sos_message = (
-        "If this is a medical emergency, please contact your nearest healthcare provider immediately. "
-        "You can also call local emergency numbers."
+        "🚨 If this is a medical emergency, please contact your nearest healthcare provider immediately.\n"
+        "📞 You can also call emergency number **108** (India) for urgent help."
     )
     if target_lang != "en":
-        sos_message = ask_gemini(f"Translate this to {target_lang}: {sos_message}", target_lang)
+        sos_message = translate_via_gemini(sos_message, target_lang)
     st.error(sos_message)
+    st.markdown("👉 [📞 Call 108](tel:108)")
