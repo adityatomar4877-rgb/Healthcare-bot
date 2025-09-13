@@ -24,29 +24,10 @@ except Exception:
     gemini_ready = False
 
 # ------------------------------
-# 2.1 Check Gemini Quota
-# ------------------------------
-def check_gemini_quota():
-    if not gemini_ready:
-        st.error("❌ Gemini API key missing. Add it in Streamlit Cloud → App → Settings → Secrets.")
-        return
-    try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content("Hello")
-        st.success("✅ Gemini API key working — upgraded quota detected (not FreeTier).")
-    except Exception as e:
-        err = str(e)
-        if "FreeTier" in err:
-            st.error("⚠️ Your Gemini API key is still on FreeTier quota. Double-check that you used the student-plan key.")
-        else:
-            st.warning(f"⚠️ Gemini returned error: {err}")
-
-check_gemini_quota()
-
-# ------------------------------
 # 3. Gemini Translation Functions
 # ------------------------------
 def translate_via_gemini(text, target_lang="en"):
+    """Translate text to target language using Gemini"""
     if not gemini_ready or target_lang == "en" or not text.strip():
         return text
     try:
@@ -57,6 +38,7 @@ def translate_via_gemini(text, target_lang="en"):
         return text
 
 def to_english(text):
+    """Translate any text to English (for searching CSV)"""
     if not gemini_ready or not text.strip():
         return text
     try:
@@ -67,31 +49,36 @@ def to_english(text):
         return text
 
 # ------------------------------
-# 4. FAQ Search Function
+# 4. FAQ Search Function (fuzzy matching)
 # ------------------------------
 def search_faq(user_input, top_n=3):
+    """Search FAQ using fuzzy string similarity"""
     user_input = user_input.lower()
     scores = []
+
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
         notes = str(row.get("Notes", "")).lower()
 
+        # Fuzzy similarity scores
         score = max(
             SequenceMatcher(None, user_input, disease).ratio(),
             SequenceMatcher(None, user_input, symptoms).ratio(),
             SequenceMatcher(None, user_input, notes).ratio()
         )
-        if score > 0.3:
+
+        if score > 0.3:  # threshold
             scores.append((score, row))
 
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
     return [row for _, row in scores] if scores else None
 
 # ------------------------------
-# 5. Gemini Fallback
+# 5. Gemini Fallback Function
 # ------------------------------
 def ask_gemini(user_input, target_lang="en"):
+    """Get response from Gemini in target language"""
     if not gemini_ready:
         return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
     try:
@@ -112,6 +99,7 @@ st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips.")
 
+# Language map
 lang_map = {
     "English": "en",
     "हिंदी (Hindi)": "hi",
@@ -127,11 +115,14 @@ lang_map = {
     "ଓଡ଼ିଆ (Odia)": "or"
 }
 
+# Manual language selection
 language_choice = st.selectbox("🌐 Choose Language:", list(lang_map.keys()))
 target_lang = lang_map[language_choice]
 
+# User input
 user_question = st.text_input("Type your question here:")
 
+# Auto-detect language
 if user_question.strip():
     try:
         detected_lang = detect(user_question)
@@ -144,7 +135,10 @@ if user_question.strip():
 submit = st.button("🔍 Search")
 
 if submit and user_question:
+    # Step 1: Translate query to English for CSV
     query_in_english = to_english(user_question)
+
+    # Step 2: Search in FAQ
     matches = search_faq(query_in_english)
 
     if matches:
@@ -161,10 +155,14 @@ if submit and user_question:
             st.info(translated_block)
             st.markdown("---")
     else:
-        with st.spinner("Please Wait Patiently..."):
+        # ✅ Fallback to AI in user’s own language
+        with st.spinner("🤖 Cosulting your problem..."):
             answer = ask_gemini(user_question, target_lang)
             st.success(answer)
 
+# ------------------------------
+# 7. Random Health Tip
+# ------------------------------
 if st.button("💡 Show me a random health tip"):
     tips = [
         "Wash your hands regularly with soap and water.",
@@ -178,6 +176,9 @@ if st.button("💡 Show me a random health tip"):
         tip = translate_via_gemini(tip, target_lang)
     st.warning(tip)
 
+# ------------------------------
+# 8. SOS / Emergency Button
+# ------------------------------
 if st.button("🆘 Emergency / SOS (Call 108)"):
     sos_message = (
         "🚨 If this is a medical emergency, please call **108** immediately "
