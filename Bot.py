@@ -50,7 +50,7 @@ def to_english(text):
 
 # ========== 4. FAQ Search Function (keyword + fuzzy) ==========
 def search_faq(user_input, top_n=3):
-    """Search FAQ database with keyword + fuzzy logic."""
+    """Search FAQ database with keyword + fuzzy logic. Returns None if no strong match."""
     user_input = user_input.lower().strip()
     scores = []
     found_exact = False
@@ -60,26 +60,32 @@ def search_faq(user_input, top_n=3):
         symptoms = str(row.get("Common Symptoms", "")).lower()
         notes = str(row.get("Notes", "")).lower()
 
-        # Direct keyword containment
+        # ✅ Direct keyword containment check
         if any(word in user_input for word in (disease.split() + symptoms.split() + notes.split())):
             found_exact = True
 
-        # Fuzzy similarity
+        # ✅ Fuzzy similarity
         score = max(
             SequenceMatcher(None, user_input, disease).ratio(),
             SequenceMatcher(None, user_input, symptoms).ratio(),
             SequenceMatcher(None, user_input, notes).ratio()
         )
 
-        if score >= 0.3:  # looser threshold
+        if score >= 0.3:  # candidate list
             scores.append((score, row))
 
+    # sort by score
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
 
+    # ✅ Strong match conditions
     if found_exact and scores:
         return [row for _, row in scores]
 
-    return [row for _, row in scores] if scores else None
+    if scores and scores[0][0] >= 0.6:  # fuzzy strong enough
+        return [row for _, row in scores]
+
+    # ❌ Nothing useful → let AI handle it
+    return None
 
 # ========== 5. Gemini Fallback Function ==========
 def ask_gemini(user_input, target_lang="en"):
