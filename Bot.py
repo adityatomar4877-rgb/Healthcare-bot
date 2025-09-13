@@ -26,7 +26,6 @@ else:
 
 # ========== 3. Translation Helpers ==========
 def translate_via_gemini(text, target_lang="en"):
-    """Translate given text into target language using Gemini."""
     if not gemini_ready or target_lang == "en" or not text.strip():
         return text
     try:
@@ -38,7 +37,6 @@ def translate_via_gemini(text, target_lang="en"):
         return text
 
 def to_english(text):
-    """Convert any text to English using Gemini."""
     if not gemini_ready or not text.strip():
         return text
     try:
@@ -50,27 +48,30 @@ def to_english(text):
         return text
 
 # ========== 4. FAQ Search Function ==========
-def search_faq(user_input, top_n=3):
-    """Fuzzy search in FAQ database."""
-    user_input = user_input.lower()
+def search_faq(user_input, top_n=3, threshold=0.6):
+    """Fuzzy search in FAQ database with stricter threshold."""
+    user_input = user_input.lower().strip()
     scores = []
+
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
         notes = str(row.get("Notes", "")).lower()
+
         score = max(
             SequenceMatcher(None, user_input, disease).ratio(),
             SequenceMatcher(None, user_input, symptoms).ratio(),
             SequenceMatcher(None, user_input, notes).ratio()
         )
-        if score > 0.3:
+
+        if score >= threshold:
             scores.append((score, row))
+
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
     return [row for _, row in scores] if scores else None
 
 # ========== 5. Gemini Fallback Function ==========
 def ask_gemini(user_input_en, target_lang="en"):
-    """Fallback to Gemini if FAQ search fails."""
     if not gemini_ready:
         st.warning("⚠️ Gemini unavailable. Add API key in Streamlit secrets.")
         return "⚠️ Gemini AI not available. Please contact admin."
@@ -120,28 +121,40 @@ if user_question.strip():
     except Exception as e:
         st.warning(f"Language detection error: {e}")
 
+# 🔘 Toggle for forcing AI
+force_ai = st.checkbox("💬 Ask AI Directly (skip database search)")
+
 submit = st.button("🔍 Search")
 if submit and user_question:
     query_in_english = to_english(user_question)
-    matches = search_faq(query_in_english)
-    if matches:
-        st.subheader("📋 Best Matches from Database:")
-        for row in matches:
-            block = (
-                f"Disease: {row.get('Disease','N/A')}\n"
-                f"Symptoms: {row.get('Common Symptoms','N/A')}\n"
-                f"Notes: {row.get('Notes','N/A')}\n"
-                f"Severity: {row.get('Severity Tagging','N/A')}\n"
-                f"Advice: {row.get('Disclaimers & Advice','N/A')}"
-            )
-            translated_block = translate_via_gemini(block, target_lang)
-            st.info(translated_block)
-            st.markdown("---")
-    else:
-        with st.spinner("🤖 Consulting your problem..."):
-            answer_en = ask_gemini(query_in_english, "en")  # Ask in English
-            answer_final = translate_via_gemini(answer_en, target_lang)  # Translate only once
+
+    if force_ai:
+        # Directly go to AI
+        with st.spinner("🤖 Asking Gemini AI..."):
+            answer_en = ask_gemini(query_in_english, "en")
+            answer_final = translate_via_gemini(answer_en, target_lang)
             st.success(answer_final)
+    else:
+        # First search FAQ, else fall back to AI
+        matches = search_faq(query_in_english)
+        if matches:
+            st.subheader("📋 Best Matches from Database:")
+            for row in matches:
+                block = (
+                    f"Disease: {row.get('Disease','N/A')}\n"
+                    f"Symptoms: {row.get('Common Symptoms','N/A')}\n"
+                    f"Notes: {row.get('Notes','N/A')}\n"
+                    f"Severity: {row.get('Severity Tagging','N/A')}\n"
+                    f"Advice: {row.get('Disclaimers & Advice','N/A')}"
+                )
+                translated_block = translate_via_gemini(block, target_lang)
+                st.info(translated_block)
+                st.markdown("---")
+        else:
+            with st.spinner("🤖 Consulting your problem..."):
+                answer_en = ask_gemini(query_in_english, "en")
+                answer_final = translate_via_gemini(answer_en, target_lang)
+                st.success(answer_final)
 
 # ========== 7. Random Health Tip ==========
 if st.button("💡 Show me a random health tip"):
