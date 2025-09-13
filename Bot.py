@@ -1,86 +1,76 @@
 import streamlit as st
 import pandas as pd
 import random
-import google.generativeai as genai
 from langdetect import detect
 from difflib import SequenceMatcher
 
-# ------------------------------
-# 1. Load FAQ CSV safely
-# ------------------------------
+# ========== 1. Load FAQ CSV safely ==========
 try:
     faq_df = pd.read_csv("health_faq.csv")
 except FileNotFoundError:
     st.error("❌ FAQ file not found. Please upload 'health_faq.csv' in the app directory.")
     st.stop()
 
-# ------------------------------
-# 2. Configure Gemini
-# ------------------------------
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    gemini_ready = True
-except Exception:
-    gemini_ready = False
+# ========== 2. Configure Gemini ==========
+gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
+gemini_ready = False
+if gemini_api_key:
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_api_key)
+        gemini_ready = True
+    except Exception as e:
+        st.error(f"Gemini API could not be initialized: {e}")
+        gemini_ready = False
+else:
+    st.warning("⚠️ Gemini API key not found in Streamlit secrets. Add GEMINI_API_KEY.")
 
-# ------------------------------
-# 3. Gemini Translation Functions
-# ------------------------------
+# ========== 3. Gemini Translation Functions ==========
 def translate_via_gemini(text, target_lang="en"):
-    """Translate text to target language using Gemini"""
     if not gemini_ready or target_lang == "en" or not text.strip():
         return text
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(f"Translate the following text to {target_lang}:\n\n{text}")
         return response.text
-    except Exception:
+    except Exception as e:
+        st.error(f"Translation error with Gemini: {e}")
         return text
 
 def to_english(text):
-    """Translate any text to English (for searching CSV)"""
     if not gemini_ready or not text.strip():
         return text
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(f"Translate this to English:\n\n{text}")
         return response.text
-    except Exception:
+    except Exception as e:
+        st.error(f"English translation error with Gemini: {e}")
         return text
 
-# ------------------------------
-# 4. FAQ Search Function (fuzzy matching)
-# ------------------------------
+# ========== 4. FAQ Search Function (fuzzy matching) ==========
 def search_faq(user_input, top_n=3):
-    """Search FAQ using fuzzy string similarity"""
     user_input = user_input.lower()
     scores = []
-
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
         notes = str(row.get("Notes", "")).lower()
-
-        # Fuzzy similarity scores
         score = max(
             SequenceMatcher(None, user_input, disease).ratio(),
             SequenceMatcher(None, user_input, symptoms).ratio(),
             SequenceMatcher(None, user_input, notes).ratio()
         )
-
-        if score > 0.3:  # threshold
+        if score > 0.3:
             scores.append((score, row))
-
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
     return [row for _, row in scores] if scores else None
 
-# ------------------------------
-# 5. Gemini Fallback Function
-# ------------------------------
+# ========== 5. Gemini Fallback Function ==========
 def ask_gemini(user_input, target_lang="en"):
-    """Get response from Gemini in target language"""
     if not gemini_ready:
-        return "⚠️ Gemini API key not found. Add it in Streamlit Cloud → App → Settings → Secrets."
+        st.warning("⚠️ Gemini unavailable. Add API key in Streamlit secrets.")
+        return "⚠️ Gemini AI not available. Please contact admin."
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
@@ -90,16 +80,14 @@ def ask_gemini(user_input, target_lang="en"):
         )
         return response.text
     except Exception as e:
+        st.error(f"Gemini error: {e}")
         return f"⚠️ Error while contacting Gemini: {e}"
 
-# ------------------------------
-# 6. Streamlit UI
-# ------------------------------
+# ========== 6. Streamlit UI ==========
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, and prevention tips.")
 
-# Language map
 lang_map = {
     "English": "en",
     "हिंदी (Hindi)": "hi",
@@ -115,32 +103,24 @@ lang_map = {
     "ଓଡ଼ିଆ (Odia)": "or"
 }
 
-# Manual language selection
 language_choice = st.selectbox("🌐 Choose Language:", list(lang_map.keys()))
 target_lang = lang_map[language_choice]
 
-# User input
 user_question = st.text_input("Type your question here:")
 
-# Auto-detect language
 if user_question.strip():
     try:
         detected_lang = detect(user_question)
         if detected_lang in lang_map.values() and detected_lang != target_lang:
             target_lang = detected_lang
             st.info(f"🌐 Auto-detected language switched to: {detected_lang.upper()}")
-    except Exception:
-        pass
+    except Exception as e:
+        st.warning(f"Language detection error: {e}")
 
 submit = st.button("🔍 Search")
-
 if submit and user_question:
-    # Step 1: Translate query to English for CSV
     query_in_english = to_english(user_question)
-
-    # Step 2: Search in FAQ
     matches = search_faq(query_in_english)
-
     if matches:
         st.subheader("📋 Best Matches from Database:")
         for i, row in enumerate(matches, start=1):
@@ -155,14 +135,11 @@ if submit and user_question:
             st.info(translated_block)
             st.markdown("---")
     else:
-        # ✅ Fallback to AI in user’s own language
-        with st.spinner("🤖 Cosulting your problem..."):
+        with st.spinner("🤖 Consulting your problem..."):
             answer = ask_gemini(user_question, target_lang)
             st.success(answer)
 
-# ------------------------------
-# 7. Random Health Tip
-# ------------------------------
+# ========== 7. Random Health Tip ==========
 if st.button("💡 Show me a random health tip"):
     tips = [
         "Wash your hands regularly with soap and water.",
@@ -176,9 +153,7 @@ if st.button("💡 Show me a random health tip"):
         tip = translate_via_gemini(tip, target_lang)
     st.warning(tip)
 
-# ------------------------------
-# 8. SOS / Emergency Button
-# ------------------------------
+# ========== 8. SOS / Emergency Button ==========
 if st.button("🆘 Emergency / SOS (Call 108)"):
     sos_message = (
         "🚨 If this is a medical emergency, please call **108** immediately "
