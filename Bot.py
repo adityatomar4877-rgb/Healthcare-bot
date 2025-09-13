@@ -26,6 +26,7 @@ else:
 
 # ========== 3. Translation Helpers ==========
 def translate_via_gemini(text, target_lang="en"):
+    """Translate given text into target language using Gemini."""
     if not gemini_ready or target_lang == "en" or not text.strip():
         return text
     try:
@@ -37,6 +38,7 @@ def translate_via_gemini(text, target_lang="en"):
         return text
 
 def to_english(text):
+    """Convert any text to English using Gemini."""
     if not gemini_ready or not text.strip():
         return text
     try:
@@ -48,29 +50,40 @@ def to_english(text):
         return text
 
 # ========== 4. FAQ Search Function ==========
-def search_faq(user_input, top_n=3, threshold=0.6):
-    """Fuzzy search in FAQ database with stricter threshold."""
+def search_faq(user_input, top_n=3):
+    """Search FAQ database with keyword + fuzzy logic."""
     user_input = user_input.lower().strip()
     scores = []
+    found_exact = False
 
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "")).lower()
         symptoms = str(row.get("Common Symptoms", "")).lower()
         notes = str(row.get("Notes", "")).lower()
 
+        # Check direct keyword presence
+        if any(word in user_input for word in (disease.split() + symptoms.split() + notes.split())):
+            found_exact = True
+
+        # Fuzzy similarity
         score = max(
             SequenceMatcher(None, user_input, disease).ratio(),
             SequenceMatcher(None, user_input, symptoms).ratio(),
             SequenceMatcher(None, user_input, notes).ratio()
         )
 
-        if score >= threshold:
+        if score >= 0.3:  # relaxed threshold
             scores.append((score, row))
 
     scores = sorted(scores, key=lambda x: x[0], reverse=True)[:top_n]
+
+    # Always return if exact keyword match
+    if found_exact and scores:
+        return [row for _, row in scores]
+
     return [row for _, row in scores] if scores else None
 
-# ========== 5. Gemini Fallback Function ==========
+# ========== 5. Gemini Fallback ==========
 def ask_gemini(user_input_en, target_lang="en"):
     if not gemini_ready:
         st.warning("⚠️ Gemini unavailable. Add API key in Streamlit secrets.")
@@ -121,7 +134,7 @@ if user_question.strip():
     except Exception as e:
         st.warning(f"Language detection error: {e}")
 
-# 🔘 Toggle for forcing AI
+# Toggle for forcing AI
 force_ai = st.checkbox("💬 Ask AI Directly (skip database search)")
 
 submit = st.button("🔍 Search")
@@ -129,13 +142,12 @@ if submit and user_question:
     query_in_english = to_english(user_question)
 
     if force_ai:
-        # Directly go to AI
+        # Direct AI mode
         with st.spinner("🤖 Asking Gemini AI..."):
             answer_en = ask_gemini(query_in_english, "en")
             answer_final = translate_via_gemini(answer_en, target_lang)
             st.success(answer_final)
     else:
-        # First search FAQ, else fall back to AI
         matches = search_faq(query_in_english)
         if matches:
             st.subheader("📋 Best Matches from Database:")
