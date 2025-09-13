@@ -6,31 +6,44 @@ import string
 from langdetect import detect
 from difflib import SequenceMatcher
 
-# ========== 0. Small helpers & config ==========
+# ========== Basic page config ==========
 st.set_page_config(page_title="Healthcare Chatbot", page_icon="💊")
 
-# Basic english stopwords (small list to avoid false token matches)
+# ========== Small helpers ==========
 STOPWORDS = {
     "the","and","for","with","from","that","this","these","those","have","has","had",
     "been","was","were","are","is","a","an","in","on","at","by","of","to","or","as",
     "it","be","but","not","so","if","we","you","i","they","he","she","them","his","her"
 }
 
-def clean_and_tokenize(text):
-    """Lowercase, remove punctuation, split into tokens. Keep tokens length >=3 and not stopwords."""
+MENTAL_HEALTH_KEYWORDS = {
+    "sad","depressed","depression","anxious","anxiety","lonely","suicidal","suicide",
+    "hopeless","down","stressed","stress","panic","afraid","scared","worthless",
+    "want to die","kill myself","suicidal thoughts","suicidal ideation"
+}
+
+def clean_and_tokenize(text, min_len=3):
+    """Lower, remove punctuation, return set of tokens length>=min_len, excluding stopwords."""
     if not text or not isinstance(text, str):
         return set()
-    # normalize
     text = text.lower()
-    # replace punctuation with spaces
     text = re.sub(r"[{}]".format(re.escape(string.punctuation)), " ", text)
     tokens = [t.strip() for t in text.split() if t.strip()]
-    # filter
-    tokens = [t for t in tokens if len(t) >= 3 and t not in STOPWORDS]
+    tokens = [t for t in tokens if len(t) >= min_len and t not in STOPWORDS]
     return set(tokens)
 
 def fuzzy_ratio(a, b):
     return SequenceMatcher(None, a or "", b or "").ratio()
+
+def contains_mental_keyword(text):
+    """Detect mental/emotional keywords in raw text (case-insensitive)."""
+    if not text:
+        return False
+    s = text.lower()
+    for kw in MENTAL_HEALTH_KEYWORDS:
+        if kw in s:
+            return True
+    return False
 
 # ========== 1. Load FAQ CSV safely ==========
 try:
@@ -51,37 +64,31 @@ if gemini_api_key:
         gemini_ready = True
     except Exception as e:
         st.warning(f"Gemini init failed: {e}")
-        gemini_ready = False
 else:
     st.info("Gemini API key not found in Streamlit secrets. Gemini functions will be disabled until you add GEMINI_API_KEY.")
 
-# ========== 3. Gemini translation & ask helpers ==========
+# ========== 3. Gemini helpers ==========
 def translate_via_gemini(text, target_lang="en"):
-    """Translate text to target_lang using Gemini. Returns original text if Gemini not available."""
     if not gemini_ready or not text or target_lang == "en":
         return text
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         resp = model.generate_content(f"Translate the following text to {target_lang}:\n\n{text}")
         return resp.text if resp and getattr(resp, "text", None) else text
-    except Exception as e:
-        st.warning(f"Translation error with Gemini: {e}")
+    except Exception:
         return text
 
 def to_english(text):
-    """Translate user text to English if Gemini available; else return text as-is."""
     if not gemini_ready or not text:
         return text
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         resp = model.generate_content(f"Translate this to English:\n\n{text}")
         return resp.text if resp and getattr(resp, "text", None) else text
-    except Exception as e:
-        st.warning(f"English translation error: {e}")
+    except Exception:
         return text
 
 def ask_gemini(user_input_en, target_lang="en"):
-    """Ask Gemini (user_input_en should be English). Returns string answer or helpful message."""
     if not gemini_ready:
         return "⚠️ Gemini AI not available. Please add GEMINI_API_KEY in Streamlit secrets to enable AI."
     try:
@@ -96,89 +103,54 @@ def ask_gemini(user_input_en, target_lang="en"):
     except Exception as e:
         return f"⚠️ Error while contacting Gemini: {e}"
 
-# ========== 4. Improved FAQ Search (token + fuzzy) ==========
-def search_faq(user_input, top_n=3, fuzzy_threshold=0.6, debug=False):
+# ========== 4. Improved FAQ Search ==========
+def search_faq(user_input, top_n=3, fuzzy_threshold=0.60):
     """
-    Returns a list of matching rows (max top_n) IF:
-      - token overlap exists (after stopword removal), OR
-      - best fuzzy score >= fuzzy_threshold.
-    Otherwise returns None (so AI fallback will trigger).
+    Return list of rows if strong match:
+      - token overlap (after cleaning), OR
+      - best fuzzy >= fuzzy_threshold
+    Else return None so AI fallback triggers.
     """
-    user_input = (user_input or "").strip()
-    if not user_input:
+    if not user_input or not isinstance(user_input, str):
         return None
 
-    user_tokens = clean_and_tokenize(user_input)
+    user_input_clean = user_input.strip()
+    user_tokens = clean_and_tokenize(user_input_clean, min_len=3)
     candidates = []
 
-    # scan rows and compute token overlap + fuzzy score
     for _, row in faq_df.iterrows():
         disease = str(row.get("Disease", "") or "")
         symptoms = str(row.get("Common Symptoms", "") or "")
         notes = str(row.get("Notes", "") or "")
-        combined_text = " ".join([disease, symptoms, notes]).strip()
-
-        if not combined_text:
+        combined = " ".join([disease, symptoms, notes]).strip()
+        if not combined:
             continue
 
-        row_tokens = clean_and_tokenize(combined_text)
-        token_overlap = user_tokens.intersection(row_tokens)
-        tok_count = len(token_overlap)
+        row_tokens = clean_and_tokenize(combined, min_len=3)
+        token_hits = len(user_tokens.intersection(row_tokens))
+        score = fuzzy_ratio(user_input_clean.lower(), combined.lower())
 
-        # fuzzy match between raw user input and combined row text
-        score = fuzzy_ratio(user_input, combined_text)
-
-        # score weight: If token overlap exists, we boost priority (but still return None only if no strong match)
         priority = score
-        if tok_count > 0:
-            # give a small boost when meaningful token overlap present
-            priority = max(priority, 0.75 + min(0.25, tok_count * 0.05))  # ensures token hits usually pass
+        if token_hits > 0:
+            priority = max(priority, 0.75 + min(0.20, token_hits * 0.05))
 
-        candidates.append((priority, score, tok_count, row))
+        candidates.append((priority, score, token_hits, row))
 
     if not candidates:
-        if debug:
-            st.write("DEBUG: No candidates in DB (empty rows).")
         return None
 
-    # sort by priority (descending)
     candidates.sort(key=lambda x: x[0], reverse=True)
-    top_candidates = candidates[:top_n]
+    top = candidates[:top_n]
+    best_priority, best_fuzzy, best_token_hits, best_row = top[0]
 
-    # debug info
-    if debug:
-        dbg = [
-            {
-                "priority": round(c[0], 3),
-                "fuzzy_score": round(c[1], 3),
-                "token_hits": c[2],
-                "disease": c[3].get("Disease", "N/A")
-            } for c in top_candidates
-        ]
-        st.write("DEBUG - top candidates:", dbg)
+    if best_token_hits > 0 or best_fuzzy >= fuzzy_threshold:
+        return [c[3] for c in top]
 
-    # Decide if top result passes strong-match criteria:
-    best_priority, best_fuzzy, best_tok_hits, best_row = top_candidates[0]
+    return None
 
-    # Strong-match rules:
-    # 1) If any token hits exist -> treat as strong match
-    # 2) Else if best_fuzzy >= fuzzy_threshold -> treat as strong match
-    if best_tok_hits > 0 or best_fuzzy >= fuzzy_threshold:
-        return [c[3] for c in top_candidates]
-    else:
-        return None
-
-# ========== 5. UI elements ==========
+# ========== 5. UI ==========
 st.title("💊 Healthcare & Disease Awareness Chatbot")
 st.write("Ask about diseases, symptoms, prevention. Database checked first; AI fallback only if needed.")
-
-# sidebar controls
-st.sidebar.header("Settings")
-fuzzy_threshold = st.sidebar.slider("Fuzzy match threshold", min_value=0.30, max_value=0.90, value=0.60, step=0.05)
-top_n = st.sidebar.slider("Results from database (top n)", 1, 5, 3)
-debug_mode = st.sidebar.checkbox("Show debug info", value=False)
-st.sidebar.markdown("---")
-st.sidebar.markdown("Gemini ready: " + ("✅" if gemini_ready else "❌"))
 
 lang_map = {
     "English": "en",
@@ -200,22 +172,30 @@ target_lang = lang_map[language_choice]
 
 user_question = st.text_input("Type your question here:")
 
-# AI toggle
 force_ai = st.checkbox("🤖 Ask AI Directly (skip database)")
 
-# detect language for UI convenience (doesn't affect matching if Gemini unavailable)
 if user_question.strip():
     try:
         detected_lang = detect(user_question)
         if detected_lang in lang_map.values() and detected_lang != target_lang:
-            st.info(f"🌐 Auto-detected language: {detected_lang.upper()} (will display results in selected language)")
+            st.info(f"🌐 Auto-detected language: {detected_lang.upper()} (results will be displayed in selected language)")
     except Exception:
         pass
 
-# ========== 6. Submit logic ==========
+# ========== 6. Submit logic with mental-health guard ==========
 submit = st.button("🔍 Search")
 if submit and user_question:
-    # Convert to English for search/AI if possible, else use raw text
+    if contains_mental_keyword(user_question):
+        st.warning("It looks like you're describing feelings or emotional distress. Showing supportive guidance (AI) rather than database disease matches.")
+        query_in_english = to_english(user_question) if gemini_ready else user_question
+        with st.spinner("🤖 Consulting AI for supportive guidance..."):
+            answer_en = ask_gemini(query_in_english, "en")
+            answer_final = translate_via_gemini(answer_en, target_lang)
+            st.success(answer_final)
+            if any(k in user_question.lower() for k in ("suicide","suicidal","want to die","kill myself")):
+                st.error("If you are in immediate danger or thinking of harming yourself, please contact local emergency services immediately.")
+        st.stop()
+
     query_in_english = to_english(user_question) if gemini_ready else user_question
 
     if force_ai:
@@ -223,9 +203,8 @@ if submit and user_question:
             answer_en = ask_gemini(query_in_english, "en")
             answer_final = translate_via_gemini(answer_en, target_lang)
             st.success(answer_final)
-
     else:
-        matches = search_faq(query_in_english, top_n=top_n, fuzzy_threshold=fuzzy_threshold, debug=debug_mode)
+        matches = search_faq(query_in_english, top_n=3, fuzzy_threshold=0.60)
         if matches:
             st.subheader("📋 Best Matches from Database:")
             for row in matches:
@@ -240,7 +219,6 @@ if submit and user_question:
                 st.info(displayed)
                 st.markdown("---")
         else:
-            # fallback to AI
             with st.spinner("🤖 No useful DB match, asking Gemini AI..."):
                 answer_en = ask_gemini(query_in_english, "en")
                 answer_final = translate_via_gemini(answer_en, target_lang)
